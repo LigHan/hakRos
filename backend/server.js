@@ -7,6 +7,7 @@ const db = require('./db');
 const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
 const connections = require('./connections')(db, statistics.auth);
+const social = require('./social')(db, statistics.auth);
 const map = require('./map')(db, statistics.auth, statistics.optionalAuth);
 const path = require('node:path');
 const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
@@ -139,6 +140,7 @@ app.post('/login', async (req, res) => {
 app.post('/api/logout', statistics.auth, (req, _res, next) => { map.hide(req.account.id); next(); });
 app.use('/api', statistics.router);
 app.use('/api/connections', connections.router);
+app.use('/api/social', social.router);
 // Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
 app.use('/api/admin', require('./admin')(db, statistics.auth));
 
@@ -169,6 +171,7 @@ function reportStartupError(error) {
 db.ready.then(async () => {
   await statistics.initialize();
   await connections.initialize();
+  await social.initialize();
   await map.initialize();
   await companyPlaces.initialize();
   const server = app.listen(PORT, HOST, error => {

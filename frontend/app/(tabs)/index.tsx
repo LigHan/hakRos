@@ -2,19 +2,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SketchFrame } from '@/components/sketch-frame';
+import { SocialFeed } from '@/components/social-feed';
 import { databaseService, type Post, type Story } from '@/constants/content';
 import { palette, useAppStyles, useAppearance } from '@/lib/app-appearance';
 import { matchesPlaceCategory, placeCategories } from '@/lib/place-categories';
 import { getConnections } from '@/lib/connections';
 import { selectSubscribedPlaces } from '@/lib/connections-feed';
 import { getUserSession } from '@/lib/user-session';
-import { getFavoritePosts, toggleFavorite } from '@/lib/likes-favorites';
+import { rankRecommendations } from '@/lib/recommendations';
+import { getFavoritePosts, getLikedPosts, toggleFavorite } from '@/lib/likes-favorites';
 
-/** Until ranking rules are agreed, show available places without claiming personalization. */
+/** Recommendations use local place preferences; new users retain the server order. */
 export default function RecommendationsScreen() {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
@@ -26,8 +28,8 @@ export default function RecommendationsScreen() {
   const [error, setError] = useState(false);
   const [stories, setStories] = useState<Story[]>([]);
   const [storiesState, setStoriesState] = useState<'guest' | 'ready' | 'error'>('guest');
-  const [activeStory, setActiveStory] = useState<Story | null>(null);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [likes, setLikes] = useState<string[]>([]);
   const [savingFavorite, setSavingFavorite] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -37,7 +39,8 @@ export default function RecommendationsScreen() {
       const posts = await databaseService.getPosts();
       setPlaces(posts);
       const session = await getUserSession();
-      setFavorites(session ? await getFavoritePosts() : []);
+      const [saved, liked] = session ? await Promise.all([getFavoritePosts(), getLikedPosts()]) : [[], []];
+      setFavorites(saved); setLikes(liked);
       if (session?.role === 'user') {
         try {
           const [connections, publicStories] = await Promise.all([getConnections(), databaseService.getStories()]);
@@ -70,7 +73,7 @@ export default function RecommendationsScreen() {
     } finally { setSavingFavorite(null); }
   };
 
-  const filtered = useMemo(() => places.filter(place => matchesPlaceCategory(place, category)), [places, category]);
+  const filtered = useMemo(() => rankRecommendations(places, favorites, likes).filter(place => matchesPlaceCategory(place, category)), [places, category, favorites, likes]);
 
   return (
     <View style={styles.page}>
@@ -90,21 +93,11 @@ export default function RecommendationsScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={<View>
-            <View style={styles.storySection}>
-              <Text style={styles.storyHeading}>Истории</Text>
-              <FlatList horizontal data={stories} keyExtractor={item => item.id} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyList} ListHeaderComponent={<Pressable accessibilityRole="button" accessibilityLabel="Моя история" onPress={() => router.push({ pathname: '/create', params: { kind: 'story' } })} style={styles.storyItem}><View style={styles.myStory}><Ionicons name="add" size={26} color={palette.forest} /></View><Text style={styles.storyName}>Моя история</Text></Pressable>} renderItem={({ item }) => (
-                <Pressable accessibilityRole="button" accessibilityLabel={`История ${item.userName}`} onPress={() => setActiveStory(item)} style={styles.storyItem}>
-                  <View style={styles.storyRing}><Image source={{ uri: item.avatar }} style={styles.storyAvatar} /></View>
-                  <Text numberOfLines={1} style={styles.storyName}>{item.userName}</Text>
-                </Pressable>
-              )} />
-              {stories.length === 0 && storiesState !== 'error' && <Text style={styles.storyHint}>Здесь появятся истории заведений из ваших подписок</Text>}
-            </View>
-            {storiesState === 'error' && <Text accessibilityRole="alert" style={styles.storyError}>Истории подписок недоступны. Проверьте соединение или войдите снова.</Text>}
+            <SocialFeed legacyStories={stories} legacyError={storiesState === 'error'} />
             <FlatList horizontal data={placeCategories} keyExtractor={item => item.id} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} renderItem={({ item }) => (
               <Pressable accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => setCategory(item.id)} style={[styles.filter, category === item.id && styles.filterActive]}><Text style={[styles.filterText, category === item.id && styles.filterTextActive]}>{item.name}</Text></Pressable>
             )} />
-            <Text style={styles.note}>Все доступные места · без персонального подбора</Text>
+            <Text style={styles.note}>{favorites.length || likes.length ? 'Подбор по категориям сохранённых и понравившихся мест' : 'Все доступные места · сохраняйте понравившиеся для подбора'}</Text>
             <Pressable accessibilityRole="button" onPress={() => router.navigate('/nearby')} style={styles.nearbyLink}><Ionicons name="location-outline" size={17} color={palette.olive} /><Text style={styles.nearbyText}>Места рядом</Text></Pressable>
           </View>}
           ListEmptyComponent={<View style={styles.state}><Ionicons name="leaf-outline" size={36} color={palette.olive} /><Text style={styles.stateText}>{places.length ? 'В этой категории пока нет мест' : 'Пока нет доступных мест'}</Text></View>}
@@ -128,18 +121,7 @@ export default function RecommendationsScreen() {
           )}
         />
       )}
-      <Modal visible={!!activeStory} transparent animationType="fade" onRequestClose={() => setActiveStory(null)}>
-        <View style={styles.storyOverlay}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Закрыть историю" style={StyleSheet.absoluteFill} onPress={() => setActiveStory(null)} />
-          {activeStory && <View style={styles.storyCard}>
-            <Image source={{ uri: activeStory.image }} style={styles.storyImage} />
-            <View style={styles.storyContent}><Text style={styles.storyTitle}>{activeStory.userName}</Text><Text style={styles.storyText}>{activeStory.text}</Text>
-              <Pressable accessibilityRole="button" onPress={() => { const postId = activeStory.postId; setActiveStory(null); router.push({ pathname: '/company/[id]', params: { id: postId } }); }} style={styles.storyAction}><Text style={styles.storyActionText}>Открыть место</Text></Pressable>
-              <Pressable accessibilityRole="button" onPress={() => setActiveStory(null)} style={styles.storyClose}><Text style={styles.storyCloseText}>Закрыть</Text></Pressable>
-            </View>
-          </View>}
-        </View>
-      </Modal>
+
     </View>
   );
 }

@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { useEffect, useRef, useState, type ComponentRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
-  ActivityIndicator, Image, KeyboardAvoidingView, Modal, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Animated, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable,
+  ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type ViewProps, type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
 type Status = 'checking' | 'mock' | 'gigachat' | 'unavailable';
@@ -16,6 +16,104 @@ const opening: ChatMessage = {
   role: 'assistant',
   content: 'Привет! Помогу придумать, чем заняться после пар. Сколько у тебя времени и какой бюджет?',
 };
+const WIDGET_SIZE = 54;
+const quickMessages = ['Есть пара часов', 'Подскажи, куда сходить'];
+
+function clampPosition(value: number, width: number) {
+  return Math.max(0, Math.min(value, Math.max(0, width - WIDGET_SIZE)));
+}
+
+function createDockMotion() {
+  const position = new Animated.Value(0);
+  let width = 0;
+  let current = 0;
+  let start = 0;
+  let pendingDelta = 0;
+  let measured = false;
+  let pointerStartX = 0;
+  let pointerStartPosition = 0;
+  let dragging = false;
+  let suppressPress = false;
+  let captureElement: HTMLElement | null = null;
+
+  function settleAt(value: number) {
+    current = clampPosition(value, width);
+    Animated.spring(position, { toValue: current, speed: 18, bounciness: 0, useNativeDriver: true }).start();
+  }
+
+  const shouldMove = (dx: number, dy: number) => {
+    const moving = Math.abs(dx) > 5 && Math.abs(dx) > Math.abs(dy);
+    if (moving) pendingDelta = dx;
+    return moving;
+  };
+  const responder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => shouldMove(gesture.dx, gesture.dy),
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => shouldMove(gesture.dx, gesture.dy),
+    onPanResponderGrant: () => {
+      position.stopAnimation(value => {
+        start = clampPosition(value + pendingDelta, width);
+        current = start;
+        pendingDelta = 0;
+        position.setValue(start);
+      });
+    },
+    onPanResponderMove: (_event, gesture) => {
+      current = clampPosition(start + gesture.dx, width);
+      position.setValue(current);
+    },
+    onPanResponderRelease: (_event, gesture) => settleAt(current + gesture.vx * 70),
+    onPanResponderTerminate: () => settleAt(current),
+  });
+
+  function measure(nextWidth: number) {
+    if (nextWidth <= 0) return;
+    const oldRange = Math.max(0, width - WIDGET_SIZE);
+    const newRange = Math.max(0, nextWidth - WIDGET_SIZE);
+    const next = measured && oldRange ? (current / oldRange) * newRange : newRange;
+    width = nextWidth;
+    measured = true;
+    current = clampPosition(next, width);
+    position.setValue(current);
+  }
+
+  const webHandlers = {
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return;
+      suppressPress = false;
+      dragging = false;
+      pointerStartX = event.clientX;
+      position.stopAnimation(value => { pointerStartPosition = value; });
+      captureElement = event.currentTarget.querySelector('[role="button"]');
+      captureElement?.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
+      if (!captureElement?.hasPointerCapture(event.pointerId)) return;
+      const delta = event.clientX - pointerStartX;
+      if (Math.abs(delta) > 5) dragging = true;
+      if (!dragging) return;
+      current = clampPosition(pointerStartPosition + delta, width);
+      position.setValue(current);
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLElement>) => {
+      if (!captureElement?.hasPointerCapture(event.pointerId)) return;
+      captureElement.releasePointerCapture(event.pointerId);
+      captureElement = null;
+      if (dragging) {
+        suppressPress = true;
+        settleAt(current);
+      }
+    },
+    onPointerCancel: () => { if (dragging) settleAt(current); dragging = false; },
+  } as unknown as ViewProps;
+
+  return {
+    position,
+    panHandlers: Platform.OS === 'web' ? webHandlers : responder.panHandlers,
+    measure,
+    consumeDrag: () => { const wasDrag = suppressPress; suppressPress = false; return wasDrag; },
+    moveBy: (delta: number) => settleAt(current + delta),
+  };
+}
 
 export function MascotIcon({ size = 42 }: { size?: number }) {
   const scale = size / 191;
@@ -32,6 +130,7 @@ export function MascotIcon({ size = 42 }: { size?: number }) {
 }
 
 export function AssistantLauncher() {
+  const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>('checking');
   const [messages, setMessages] = useState<ChatMessage[]>([opening]);
@@ -39,6 +138,11 @@ export function AssistantLauncher() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const listRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const [dock] = useState(createDockMotion);
+
+  function measureDock(event: LayoutChangeEvent) {
+    dock.measure(event.nativeEvent.layout.width);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -53,8 +157,8 @@ export function AssistantLauncher() {
     return () => controller.abort();
   }, [open]);
 
-  async function send() {
-    const message = draft.trim();
+  async function send(quickMessage?: string) {
+    const message = (quickMessage ?? draft).trim();
     if (!message || sending) return;
     const history = messages.slice(1).slice(-6).map(item => ({ ...item, content: item.content.slice(0, 1000) }));
     setMessages(current => [...current, { role: 'user', content: message }]);
@@ -88,19 +192,23 @@ export function AssistantLauncher() {
 
   return (
     <>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Открыть помощника"
-        accessibilityHint="Открывает чат для идей досуга"
-        onPress={() => { setStatus('checking'); setOpen(true); }}
-        style={({ pressed }) => [styles.launcher, pressed && styles.pressed]}>
-        <MascotIcon />
-        <View style={styles.launcherText}>
-          <Text style={styles.launcherTitle}>Нужна идея?</Text>
-          <Text style={styles.launcherSubtitle}>Спроси помощника</Text>
-        </View>
-        <Ionicons name="arrow-forward" size={18} color="#f8f5e8" />
-      </Pressable>
+      <View pointerEvents="box-none" onLayout={measureDock} style={[styles.dockZone, { bottom: Math.max(insets.bottom, 12) + 71 }]}>
+        <Animated.View {...dock.panHandlers} style={[styles.draggable, Platform.OS === 'web' && ({ touchAction: 'none' } as unknown as ViewStyle), { transform: [{ translateX: dock.position }] }]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Открыть помощника"
+            accessibilityHint="Нажмите, чтобы открыть чат, или перетащите вдоль нижней панели"
+            accessibilityActions={[{ name: 'increment', label: 'Переместить вправо' }, { name: 'decrement', label: 'Переместить влево' }]}
+            onAccessibilityAction={event => {
+              if (event.nativeEvent.actionName === 'increment') dock.moveBy(48);
+              if (event.nativeEvent.actionName === 'decrement') dock.moveBy(-48);
+            }}
+            onPress={() => { if (!dock.consumeDrag()) { setStatus('checking'); setOpen(true); } }}
+            style={({ pressed }) => [styles.launcher, pressed && styles.pressed]}>
+            <MascotIcon size={48} />
+          </Pressable>
+        </Animated.View>
+      </View>
 
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={styles.modalBackdrop}>
@@ -126,6 +234,15 @@ export function AssistantLauncher() {
                     <Text style={[styles.bubbleText, item.role === 'user' && styles.userText]}>{item.content}</Text>
                   </View>
                 ))}
+                {messages.length === 1 && !sending && (
+                  <View style={styles.quickMessages}>
+                    {quickMessages.map(message => (
+                      <Pressable key={message} accessibilityRole="button" accessibilityLabel={message} onPress={() => send(message)} style={styles.quickButton}>
+                        <Text style={styles.quickText}>{message}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
                 {sending && <ActivityIndicator color="#69743c" style={styles.loading} />}
                 {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
               </ScrollView>
@@ -139,10 +256,10 @@ export function AssistantLauncher() {
                   placeholderTextColor="#8c927e"
                   maxLength={1000}
                   returnKeyType="send"
-                  onSubmitEditing={send}
+                  onSubmitEditing={() => send()}
                   style={styles.input}
                 />
-                <Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" disabled={sending || !draft.trim()} onPress={send} style={[styles.send, (sending || !draft.trim()) && styles.disabled]}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" disabled={sending || !draft.trim()} onPress={() => send()} style={[styles.send, (sending || !draft.trim()) && styles.disabled]}>
                   <Ionicons name="arrow-up" size={21} color="#fffdf4" />
                 </Pressable>
               </View>
@@ -156,11 +273,10 @@ export function AssistantLauncher() {
 }
 
 const styles = StyleSheet.create({
-  launcher: { position: 'absolute', right: 16, bottom: 92, zIndex: 20, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#303c1f', borderRadius: 18, padding: 7, paddingRight: 14, elevation: 6, shadowColor: '#1c2514', shadowOpacity: 0.22, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } },
+  dockZone: { position: 'absolute', alignSelf: 'center', width: '86%', maxWidth: 420, height: WIDGET_SIZE, zIndex: 20 },
+  draggable: { position: 'absolute', left: 0, width: WIDGET_SIZE, height: WIDGET_SIZE },
+  launcher: { width: WIDGET_SIZE, height: WIDGET_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fdfbf0', borderRadius: 17, elevation: 6, shadowColor: '#1c2514', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   pressed: { opacity: 0.85 },
-  launcherText: { gap: 2 },
-  launcherTitle: { color: '#fffdf4', fontWeight: '700', fontSize: 13 },
-  launcherSubtitle: { color: '#d5ddbc', fontSize: 11 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', backgroundColor: 'rgba(22, 29, 17, 0.5)' },
   modalWrap: { width: '100%', maxWidth: 480, height: '78%' },
   sheet: { flex: 1, backgroundColor: '#fbf9f0', borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden' },
@@ -178,6 +294,9 @@ const styles = StyleSheet.create({
   userBubble: { alignSelf: 'flex-end', backgroundColor: '#64713d', borderBottomRightRadius: 5 },
   bubbleText: { color: '#293321', fontSize: 14, lineHeight: 21 },
   userText: { color: '#fffdf5' },
+  quickMessages: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignSelf: 'flex-start' },
+  quickButton: { borderWidth: 1, borderColor: '#cbd3b6', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: '#fbfcf5' },
+  quickText: { color: '#526039', fontSize: 12, fontWeight: '600' },
   loading: { alignSelf: 'flex-start', marginLeft: 12 },
   error: { color: '#a04535', fontSize: 12, lineHeight: 17 },
   composer: { flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 16, paddingTop: 10 },

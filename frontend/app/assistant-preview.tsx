@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 import { AssistantLauncher, MascotIcon } from '@/components/assistant/AssistantLauncher';
 
@@ -12,6 +13,14 @@ export default function AssistantPreview() {
         <Text style={styles.heading}>Куда пойдём{ '\n' }после пар?</Text>
         <Text style={styles.description}>Расскажи помощнику о своих интересах, времени и бюджете — и начнём искать идеи вместе.</Text>
         <View style={styles.example}><Text style={styles.exampleText}>«Есть два часа и 500 рублей»</Text></View>
+        <Text style={styles.hint}>Перетащи маскота вдоль нижней панели или нажми, чтобы открыть чат.</Text>
+      </View>
+      <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.demoDock}>
+        <Ionicons name="home-outline" size={23} color="#687451" />
+        <Ionicons name="map-outline" size={23} color="#687451" />
+        <View style={styles.searchIcon}><Ionicons name="search" size={22} color="#fffdf4" /></View>
+        <Ionicons name="person-outline" size={23} color="#687451" />
+        <Ionicons name="location-outline" size={23} color="#687451" />
       </View>
       <AssistantLauncher />
     </View>
@@ -26,4 +35,7 @@ const styles = StyleSheet.create({
   description: { color: '#758061', fontSize: 15, lineHeight: 23 },
   example: { backgroundColor: '#edf0dd', alignSelf: 'flex-start', borderRadius: 14, paddingVertical: 9, paddingHorizontal: 12, marginTop: 4 },
   exampleText: { color: '#58683c', fontSize: 12, fontWeight: '600' },
+  hint: { color: '#8b947b', fontSize: 12, lineHeight: 18 },
+  demoDock: { position: 'absolute', bottom: 12, alignSelf: 'center', width: '86%', maxWidth: 420, height: 68, borderRadius: 34, backgroundColor: '#fffdf6', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', borderWidth: 1, borderColor: '#e7e9da' },
+  searchIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#68743d' },
 });

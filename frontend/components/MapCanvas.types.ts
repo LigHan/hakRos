@@ -7,7 +7,10 @@ export type MapPoint = MapCoordinates & {
   updatedAt?: number;
   reviewStatus?: 'private' | 'pending' | 'approved';
   isOwn?: number;
+  nearbySubscription?: boolean;
 };
+
+export type MapPlace = MapPoint & { isSubscribed: boolean };
 
 export type MapState = {
   places: MapPoint[];

@@ -80,6 +80,22 @@ test('точки и геопозиция друзей: доступ, модер�
   assert.equal((await request('/places', 'POST', admin, { ...point, postId: 'post-1' })).status, 201);
   assert.equal((await request('/places', 'POST', admin, { ...point, longitude: 38, postId: 'post-1' })).status, 201);
   assert.equal((await request('/places')).data.find(p => p.postId === 'post-1').longitude, 38);
+  await t.test('карта показывает только подписки текущего личного аккаунта', async () => {
+    const forAccount = token => request('/places', 'GET', token);
+    const subscribed = response => response.data.find(place => place.postId === 'post-1').isSubscribed;
+
+    assert.equal(subscribed(await forAccount(user)), false);
+    assert.equal((await connection('/places/post-1', 'PUT', user)).status, 200);
+    const personalMap = await forAccount(user);
+    assert.equal(personalMap.headers.get('cache-control'), 'no-store');
+    assert.equal(subscribed(personalMap), true);
+    assert.equal(personalMap.data.find(place => place.id === created.id).isSubscribed, false);
+    for (const token of [other, company, admin, undefined]) {
+      assert.equal(subscribed(await forAccount(token)), false);
+    }
+    assert.equal((await connection('/places/post-1', 'DELETE', user)).status, 200);
+    assert.equal(subscribed(await forAccount(user)), false);
+  });
   assert.equal((await request(`/places/${created.id}`, 'DELETE', admin)).status, 200);
 
   assert.equal((await connection('/friends/4/request', 'PUT', user)).status, 200);

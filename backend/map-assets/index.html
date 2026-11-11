@@ -12,6 +12,7 @@
     #status{position:absolute;top:12px;left:12px;right:12px;background:#fffced;color:#283618;padding:10px;border-radius:10px;z-index:2;display:none}
     .pin{border:3px solid #fffced;box-shadow:0 2px 8px #28361866;width:26px;height:26px;border-radius:50%;background:#606c38;cursor:pointer}
     .person{background:#bc6c25}.chosen{background:#dda15e;width:20px;height:20px}
+    .nearby-subscription{display:grid;place-items:center;width:34px;height:34px;background:#dda15e;color:#283618;font-size:19px;box-shadow:0 0 0 2px #606c38,0 2px 8px #28361866;z-index:1}
     .navigation-pin{pointer-events:none;display:grid;place-items:center;color:white;font-size:13px;font-weight:700}
     .route-start{background:#283618}.route-destination{background:#606c38}
     .maplibregl-ctrl-bottom-right{bottom:6px}.maplibregl-ctrl-attrib{font-size:11px}
@@ -27,7 +28,7 @@
   };
   function error(message) { status.textContent = message; status.style.display = 'block'; notify({type:'error', message}); }
   let map, ready = false, state = {}, markers = [];
-  let lastCenterSequence, lastRouteSequence;
+  let lastCenterSequence, lastRouteSequence, lastMarkerState;
   const emptyRoute = {type:'FeatureCollection', features:[]};
 
   function navigationPin(point, className, letter, label) {
@@ -42,19 +43,26 @@
 
   function render() {
     if (!ready) return;
+    const markerState = JSON.stringify([state.places, state.people, state.selected, state.routeStart, state.destination]);
+    if (lastMarkerState === markerState) return;
+    lastMarkerState = markerState;
     markers.forEach(marker => marker.remove()); markers = [];
     for (const point of [...(state.places || []), ...(state.people || [])]) {
       if (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) continue;
       const element = document.createElement('div');
-      element.className = 'pin' + (point.kind === 'person' ? ' person' : '');
+      const person = point.kind === 'person';
+      const nearby = !person && point.nearbySubscription === true;
+      element.className = 'pin' + (person ? ' person' : nearby ? ' nearby-subscription' : '');
+      if (nearby) element.textContent = '★';
       element.setAttribute('role', 'button');
-      element.setAttribute('aria-label', point.name);
+      element.setAttribute('aria-label', nearby ? point.name + ' — заведение из подписок рядом' : point.name);
       const content = document.createElement('div');
       const title = document.createElement('strong'); title.textContent = point.name;
       const details = document.createElement('div');
-      details.textContent = point.kind === 'person'
+      details.textContent = person
         ? 'Примерная геопозиция друга'
-        : `Место · ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
+        : nearby ? 'Заведение из подписок рядом'
+          : `Место · ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
       content.append(title, details);
       if (point.isOwn && point.reviewStatus) {
         const review = document.createElement('div');

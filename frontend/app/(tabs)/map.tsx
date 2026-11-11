@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import MapCanvas from '@/components/MapCanvas';
-import type { MapCoordinates, MapPoint, MapState } from '@/components/MapCanvas.types';
+import type { MapCoordinates, MapPlace, MapPoint, MapState } from '@/components/MapCanvas.types';
 import { MapLocationSharing } from '@/components/map-location-sharing';
 import { MapRoutePanel, MapSearchResults, type MapSearchState } from '@/components/map-navigation-controls';
 import { palette, useAppStyles } from '@/lib/app-appearance';
+import { highlightNearbySubscriptions } from '@/lib/map-nearby';
 import { currentMapCoordinates, findAddresses, findRoute, placeSearchResult, type MapRoute, type MapSearchResult, type RoutePlan, type TravelMode } from '@/lib/map-navigation';
 import { registerMapSearchHandler } from '@/lib/map-search';
 import { api, ApiError, authorized } from '@/lib/statistics';
+import { useNearbyMapPosition } from '@/lib/use-nearby-map-position';
 import { getUserSession, type UserSession } from '@/lib/user-session';
 
 type FriendLocation = MapCoordinates & { id: string; name: string; updatedAt: number; expiresInMs: number };
@@ -24,7 +26,8 @@ export default function MapScreen() {
   const params = useLocalSearchParams<{ focusType?: string; focusId?: string }>();
   const [session, setSession] = useState<UserSession | null>(null);
   const [focused, setFocused] = useState(false);
-  const [places, setPlaces] = useState<MapPoint[]>([]);
+  const [places, setPlaces] = useState<MapPlace[]>([]);
+  const [permissionCheck, setPermissionCheck] = useState(0);
   const [people, setPeople] = useState<FriendPin[]>([]);
   const [selected, setSelected] = useState<MapCoordinates | null>(null);
   const [center, setCenter] = useState<MapState['center']>(null);
@@ -47,6 +50,11 @@ export default function MapScreen() {
   const handledFocus = useRef('');
   const loadVersion = useRef(0);
   const mapFocused = useRef(false);
+  const position = useNearbyMapPosition(
+    focused && session?.role === 'user' && Boolean(session.token) && places.some(place => place.isSubscribed),
+    permissionCheck,
+  );
+  const recheckLocation = () => setPermissionCheck(check => check + 1);
 
   const move = useCallback(({ latitude, longitude }: MapCoordinates) => {
     setCenter({ latitude, longitude, sequence: Date.now() + Math.random() });
@@ -229,9 +237,12 @@ export default function MapScreen() {
   const locate = async () => {
     try {
       setError('');
-      move(await currentMapCoordinates());
+      const point = await currentMapCoordinates();
+      if (mapFocused.current) move(point);
     } catch (cause) {
       if (mapFocused.current) setError(messageOf(cause));
+    } finally {
+      if (mapFocused.current) recheckLocation();
     }
   };
 
@@ -247,7 +258,10 @@ export default function MapScreen() {
     } catch {
       if (!request.signal.aborted) setRouteError('Не удалось определить местоположение. Выберите старт на карте.');
     } finally {
-      if (!request.signal.aborted) setRouteStatus('idle');
+      if (!request.signal.aborted) {
+        setRouteStatus('idle');
+        recheckLocation();
+      }
     }
   };
 
@@ -288,7 +302,7 @@ export default function MapScreen() {
   };
   return <View style={styles.root}>
     <View style={styles.map}>
-      <MapCanvas state={{ places, people, selected, center, destination, routeStart: plan?.origin ?? null, route }}
+      <MapCanvas state={{ places: highlightNearbySubscriptions(places, position), people, selected, center, destination, routeStart: plan?.origin ?? null, route }}
         onSelect={select} onError={canvasError} onSubmit={submitPoint} />
     </View>
     <View pointerEvents="box-none" style={styles.overlay}>
@@ -297,7 +311,7 @@ export default function MapScreen() {
         <Text accessibilityRole="header" style={styles.title}>Карта города</Text>
         {focused && session?.role === 'user' && session.token && (
           <MapLocationSharing key={session.id} token={session.token} onError={canvasError}
-            onOpenFriends={() => router.push('/connections')} />
+            onOpenFriends={() => router.push('/connections')} onLocationGranted={recheckLocation} />
         )}
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Моё местоположение" onPress={() => void locate()}>
           <Ionicons name="locate" size={23} color={palette.olive} />

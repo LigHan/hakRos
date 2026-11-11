@@ -53,10 +53,11 @@ async function readPosition(): Promise<MapCoordinates> {
   }
 }
 
-export function MapLocationSharing({ token, onError, onOpenFriends }: {
+export function MapLocationSharing({ token, onError, onOpenFriends, onLocationGranted }: {
   token: string;
   onError: (message: string) => void;
   onOpenFriends: () => void;
+  onLocationGranted: () => void;
 }) {
   const styles = useAppStyles(baseStyles);
   const [open, setOpen] = useState(false);
@@ -176,6 +177,7 @@ export function MapLocationSharing({ token, onError, onOpenFriends }: {
         fail('Разрешите доступ к геопозиции в настройках устройства или браузера.');
         return;
       }
+      onLocationGranted();
       void refresh();
     } catch {
       fail('Не удалось получить доступ к геопозиции.');

@@ -7,6 +7,7 @@ const db = require('./db');
 const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
 const connections = require('./connections')(db, statistics.auth);
+const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,6 +23,7 @@ const endpoints = [
   'POST /register',
   'POST /login',
   'GET /api/connections',
+  'GET /api/company/places',
 ];
 
 app.use(cors({
@@ -128,6 +130,7 @@ app.post('/login', async (req, res) => {
 
 app.use('/api', statistics.router);
 app.use('/api/connections', connections.router);
+app.use('/api/company/places', companyPlaces.router);
 // Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
 app.use('/api/admin', require('./admin')(db, statistics.auth));
 
@@ -158,6 +161,7 @@ function reportStartupError(error) {
 db.ready.then(async () => {
   await statistics.initialize();
   await connections.initialize();
+  await companyPlaces.initialize();
   const server = app.listen(PORT, HOST, error => {
     if (error) {
       reportStartupError(error);

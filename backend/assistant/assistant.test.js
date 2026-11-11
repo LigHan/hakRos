@@ -6,15 +6,32 @@ const { createAssistantRouter } = require('./router');
 const { createAssistantService } = require('./service');
 const { createCatalog } = require('./catalog');
 
-async function withServer(service, run) {
+async function withServer(service, run, auth = (_req, _res, next) => next()) {
   const app = express();
   app.use(express.json());
-  app.use('/api/assistant', createAssistantRouter({ service }));
+  app.use('/api/assistant', createAssistantRouter({ service, auth }));
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   try { await run(`http://127.0.0.1:${server.address().port}/api/assistant`); }
   finally { await new Promise(resolve => server.close(resolve)); }
 }
+
+test('assistant endpoints require a valid account session', async () => {
+  assert.throws(() => createAssistantRouter({}), /authentication/);
+  const stats = require('../statistics')({});
+  const token = stats.issue({ id: '1', role: 'user' });
+  let calls = 0;
+  const service = { mode: 'gigachat', configured: true, reply: async () => { calls++; return { reply: 'Ответ' }; } };
+  await withServer(service, async base => {
+    assert.equal((await fetch(`${base}/health`)).status, 401);
+    assert.equal((await post(base, { message: 'Привет' })).status, 401);
+    assert.equal(calls, 0);
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    assert.equal((await fetch(`${base}/health`, { headers })).status, 200);
+    assert.equal((await fetch(`${base}/chat`, { method: 'POST', headers, body: JSON.stringify({ message: 'Привет' }) })).status, 200);
+    assert.equal(calls, 1);
+  }, stats.auth);
+});
 
 async function post(base, body) {
   return fetch(`${base}/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -84,6 +101,9 @@ test('catalog provides only bounded public fields and prioritizes relevant place
   assert.doesNotMatch(JSON.stringify(places), /private@example/);
   assert.equal(await createCatalog({}).find('Привет', []), null);
   assert.equal(await createCatalog({ url: 'x', fetchImpl: async () => { throw Error('offline'); } }).find('Привет', []), null);
+  const direct = createCatalog({ loadPosts: async () => [{ id: '3', place: 'Место', email: 'private@example.test' }] });
+  assert.equal((await direct.find('Место', []))[0].name, 'Место');
+  assert.doesNotMatch(JSON.stringify(await direct.find('Место', [])), /private@example/);
 });
 
 test('live request includes catalog and reports availability', async () => {

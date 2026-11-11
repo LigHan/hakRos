@@ -1,11 +1,15 @@
 // Only public place fields are sent to the model; account and review data stay out.
-function createCatalog({ url, fetchImpl = fetch } = {}) {
+function createCatalog({ url, loadPosts, fetchImpl = fetch } = {}) {
   async function find(message, history) {
-    if (!url) return null;
+    if (!url && !loadPosts) return null;
     try {
-      const response = await fetchImpl(url, { signal: AbortSignal.timeout(4000) });
-      if (!response.ok) return null;
-      const data = await response.json();
+      let data;
+      if (loadPosts) data = await loadPosts();
+      else {
+        const response = await fetchImpl(url, { signal: AbortSignal.timeout(4000) });
+        if (!response.ok) return null;
+        data = await response.json();
+      }
       if (!Array.isArray(data)) return null;
       const words = `${history.map(item => item.content).join(' ')} ${message}`
         .toLocaleLowerCase('ru').match(/[\p{L}\p{N}]{4,}/gu) || [];

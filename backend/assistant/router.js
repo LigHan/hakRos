@@ -3,13 +3,15 @@ const { AssistantError, createAssistantService } = require('./service');
 const { createCatalog } = require('./catalog');
 
 function createAssistantRouter(options = {}) {
+  if (typeof options.auth !== 'function') throw new Error('Assistant router requires authentication');
   const service = options.service || createAssistantService({
     mode: process.env.ASSISTANT_MODE || 'gigachat',
     credentials: process.env.GIGACHAT_AUTH_KEY?.trim(),
     model: process.env.GIGACHAT_MODEL || 'GigaChat-2-Max',
-    catalog: createCatalog({ url: process.env.ASSISTANT_CATALOG_URL?.trim() }),
+    catalog: createCatalog({ loadPosts: options.loadPosts }),
   });
   const router = express.Router();
+  router.use(options.auth);
 
   router.get('/health', (_req, res) => {
     res.json({ mode: service.mode, configured: service.configured });

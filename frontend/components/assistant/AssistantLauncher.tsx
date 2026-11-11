@@ -1,16 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   ActivityIndicator, Animated, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type ViewProps, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_URL } from '@/lib/statistics';
+import { getUserSession } from '@/lib/user-session';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
-type Status = 'checking' | 'gigachat' | 'unavailable';
-
-const API_BASE = process.env.EXPO_PUBLIC_ASSISTANT_URL?.trim().replace(/\/+$/, '') ||
-  (Platform.OS === 'android' ? 'http://10.0.2.2:3001' : 'http://localhost:3001');
+type Status = 'checking' | 'gigachat' | 'unavailable' | 'unauthorized';
 
 const opening: ChatMessage = {
   role: 'assistant',
@@ -164,8 +164,9 @@ export function MascotIcon({ size = 42 }: { size?: number }) {
   );
 }
 
-export function AssistantLauncher() {
+export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>('checking');
   const [messages, setMessages] = useState<ChatMessage[]>([opening]);
@@ -183,13 +184,18 @@ export function AssistantLauncher() {
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
-    fetch(`${API_BASE}/api/assistant/health`, { signal: controller.signal })
+    getUserSession()
+      .then(session => {
+        if (!session?.token) throw new Error('unauthorized');
+        return fetch(`${API_URL}/api/assistant/health`, { signal: controller.signal, headers: { Authorization: `Bearer ${session.token}` } });
+      })
       .then(async response => {
+        if (response.status === 401) throw new Error('unauthorized');
         if (!response.ok) throw new Error('unavailable');
         const body = await response.json();
         setStatus(body.configured && body.mode === 'gigachat' ? 'gigachat' : 'unavailable');
       })
-      .catch(() => { if (!controller.signal.aborted) setStatus('unavailable'); });
+      .catch(error => { if (!controller.signal.aborted) setStatus(error instanceof Error && error.message === 'unauthorized' ? 'unauthorized' : 'unavailable'); });
     return () => controller.abort();
   }, [open]);
 
@@ -204,21 +210,26 @@ export function AssistantLauncher() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 35000);
     try {
-      const response = await fetch(`${API_BASE}/api/assistant/chat`, {
+      const session = await getUserSession();
+      if (!session?.token) throw new Error('unauthorized');
+      const response = await fetch(`${API_URL}/api/assistant/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
         body: JSON.stringify({ message, history }),
         signal: controller.signal,
       });
+      if (response.status === 401) throw new Error('unauthorized');
       const data = await response.json();
       if (!response.ok || typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('unavailable');
       setMessages(current => [...current, { role: 'assistant', content: data.reply }]);
       if (data.mode === 'gigachat') setStatus(data.mode);
       if (typeof data.catalogAvailable === 'boolean') setCatalogAvailable(data.catalogAvailable);
-    } catch {
+    } catch (failure) {
       setMessages(current => current.slice(0, -1));
       setDraft(message);
-      setError('Не удалось связаться с помощником. Проверьте подключение и попробуйте ещё раз.');
+      const unauthorized = failure instanceof Error && failure.message === 'unauthorized';
+      if (unauthorized) setStatus('unauthorized');
+      setError(unauthorized ? 'Сессия завершилась. Войдите в аккаунт снова.' : 'Не удалось связаться с помощником. Проверьте подключение и попробуйте ещё раз.');
     } finally {
       clearTimeout(timeout);
       setSending(false);
@@ -226,12 +237,20 @@ export function AssistantLauncher() {
   }
 
   const statusLabel = {
-    checking: 'Проверяем настройку', gigachat: 'GigaChat настроен', unavailable: 'Помощник недоступен',
+    checking: 'Проверяем настройку', gigachat: 'GigaChat настроен', unavailable: 'Помощник недоступен', unauthorized: 'Войдите в аккаунт',
   }[status];
+
+  async function openAssistant() {
+    if (dock.consumeDrag()) return;
+    const session = await getUserSession();
+    if (!session?.token) { router.push('/login'); return; }
+    setStatus('checking');
+    setOpen(true);
+  }
 
   return (
     <>
-      <View pointerEvents="box-none" onLayout={measureDock} style={[styles.dockZone, { bottom: Math.max(insets.bottom, 12) + 71 }]}>
+      <View pointerEvents={hidden ? 'none' : 'box-none'} accessibilityElementsHidden={hidden} importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'} onLayout={measureDock} style={[styles.dockZone, hidden && styles.hidden, { bottom: Math.max(insets.bottom, 12) + 71 }]}>
         <Animated.View {...dock.panHandlers} style={[styles.draggable, Platform.OS === 'web' && ({ touchAction: 'none', cursor: 'grab' } as unknown as ViewStyle), { transform: [{ translateX: dock.position }, { translateY: dock.lift }] }]}>
           <Animated.View pointerEvents="none" style={[styles.grabHalo, { opacity: dock.held }]} />
           <Animated.View style={{ transform: [{ scale: dock.held.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }] }}>
@@ -244,7 +263,7 @@ export function AssistantLauncher() {
               if (event.nativeEvent.actionName === 'increment') dock.moveBy(48);
               if (event.nativeEvent.actionName === 'decrement') dock.moveBy(-48);
             }}
-            onPress={() => { if (!dock.consumeDrag()) { setStatus('checking'); setOpen(true); } }}
+            onPress={() => void openAssistant()}
             onPressIn={() => dock.press(true)}
             onPressOut={() => dock.releasePressIfIdle()}
             style={({ pressed }) => [styles.launcher, pressed && styles.pressed]}>
@@ -290,6 +309,7 @@ export function AssistantLauncher() {
                 )}
                 {sending && <ActivityIndicator color="#69743c" style={styles.loading} />}
                 {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
+                {status === 'unauthorized' && <Pressable accessibilityRole="button" onPress={() => { setOpen(false); router.push('/login'); }} style={styles.quickButton}><Text style={styles.quickText}>Войти в аккаунт</Text></Pressable>}
               </ScrollView>
 
               <View style={styles.composer}>
@@ -319,6 +339,7 @@ export function AssistantLauncher() {
 
 const styles = StyleSheet.create({
   dockZone: { position: 'absolute', alignSelf: 'center', width: '86%', maxWidth: 420, height: WIDGET_SIZE, zIndex: 20 },
+  hidden: { display: 'none' },
   draggable: { position: 'absolute', left: 0, width: WIDGET_SIZE, height: WIDGET_SIZE },
   grabHalo: { position: 'absolute', left: -7, top: -7, width: WIDGET_SIZE + 14, height: WIDGET_SIZE + 14, borderRadius: 24, backgroundColor: '#a3b370', opacity: 0.45 },
   launcher: { width: WIDGET_SIZE, height: WIDGET_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fdfbf0', borderRadius: 17, elevation: 6, shadowColor: '#1c2514', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },

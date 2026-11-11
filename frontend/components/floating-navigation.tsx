@@ -5,6 +5,7 @@ import { Animated, BackHandler, Image, Platform, Pressable, ScrollView, StyleShe
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SketchFrame } from '@/components/sketch-frame';
+import { AssistantLauncher } from '@/components/assistant/AssistantLauncher';
 import { palette, useAppearance, useAppStyles } from '@/lib/app-appearance';
 import { getUserSession } from '@/lib/user-session';
 
@@ -43,7 +44,7 @@ export function FloatingNavigation() {
     return () => { animation.stop(); listener.remove(); };
   }, [open, close, progress]);
 
-  if (pathname === '/admin' || pathname === '/login' || pathname === '/modal') return null;
+  if (pathname === '/admin' || pathname === '/login' || pathname === '/modal' || pathname === '/assistant-preview') return null;
   const navigate = async (href: Href, path: string) => {
     close();
     if (path === '/profile' && !(await getUserSession())) { router.push('/login'); return; }
@@ -62,6 +63,7 @@ export function FloatingNavigation() {
     </Pressable>;
   };
   return <>
+    <AssistantLauncher hidden={open} />
     {open && <Animated.View style={[styles.chooser, { opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [70, 0] }) }] }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.chooserContent, { paddingTop: Math.max(insets.top + 8, 20), paddingBottom: islandHeight + 30 }]}>
         <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Закрыть создание" onPress={close} style={styles.back}><Ionicons name="arrow-back" color={palette.forest} size={25} /></Pressable><Text style={styles.title}>Создать</Text><View style={styles.back} /></View>

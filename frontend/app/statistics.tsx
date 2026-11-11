@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { authorized } from '@/lib/statistics';
 
@@ -35,7 +35,7 @@ export default function StatisticsPage() {
     setLoading(true);
     setError('');
     try {
-      setData(await authorized('/api/statistics'));
+      setData(await authorized(Platform.OS === 'android' ? '/api/statistics?scope=personal' : '/api/statistics'));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка загрузки');
     } finally {

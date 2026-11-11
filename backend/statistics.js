@@ -30,13 +30,15 @@ module.exports = function createStatistics(db) {
   router.get('/statistics',auth,async(req,res)=>{
     const from=new Date(Date.now()-30*86400000).toISOString(),to=new Date(Date.now()+1000).toISOString();
     let where='occurred_at >= ? AND occurred_at < ?', params=[from,to];
-    if(req.account.role==='user'){where+=' AND actor_id = ?';params.push(req.account.id);}
+    // На Android администратор использует личную статистику как обычный пользователь.
+    const personal = req.account.role === 'admin' && req.query.scope === 'personal';
+    if(req.account.role==='user' || personal){where+=' AND actor_id = ?';params.push(req.account.id);}
     else if(req.account.role==='company'){where+=' AND place_id IN (SELECT place_id FROM local_place_owners WHERE owner_id = ?)';params.push(req.account.id);}
     else if(req.account.role!=='admin') return res.status(403).json({error:'Нет доступа'});
     const rows=await all(`SELECT type,COUNT(*) n FROM local_statistics WHERE ${where} GROUP BY type`,params);
     const categories=await all(`SELECT category,COUNT(*) n FROM local_statistics WHERE ${where} AND type='card_view' AND category IS NOT NULL GROUP BY category`,params);
     const counts=Object.fromEntries([...types].map(type=>[type,0])); for(const row of rows) if(Object.hasOwn(counts,row.type)) counts[row.type]=row.n;
-    res.json({role:req.account.role,from,to,counts,categories});
+    res.json({role:personal?'user':req.account.role,from,to,counts,categories});
   });
   async function initialize(){
     await run('CREATE TABLE IF NOT EXISTS local_statistics (id INTEGER PRIMARY KEY, type TEXT NOT NULL, occurred_at TEXT NOT NULL, actor_id TEXT NOT NULL, place_id TEXT, category TEXT)');
@@ -52,6 +54,7 @@ module.exports = function createStatistics(db) {
       if(owner&&post) await run('INSERT OR IGNORE INTO local_place_owners(place_id,owner_id) VALUES(?,?)',[post.id,String(owner.id)]);
     }
   }
-  return {router,issue,initialize};
+  // Админка использует ту же серверную проверку токена, что и статистика.
+  return {router,issue,initialize,auth};
 };
 

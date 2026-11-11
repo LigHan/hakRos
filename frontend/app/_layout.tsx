@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
@@ -13,8 +13,11 @@ export const unstable_settings = {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const isWeb = Platform.OS === 'web';
-  const shellStyle = isWeb ? styles.webShell : styles.nativeShell;
-  const viewportStyle = isWeb ? styles.webViewport : styles.nativeViewport;
+  const pathname = usePathname();
+  // Админ-панель веба занимает весь экран, пользовательские экраны сохраняют прежний размер.
+  const isWebAdmin = isWeb && pathname === '/admin';
+  const shellStyle = isWebAdmin ? styles.adminShell : isWeb ? styles.webShell : styles.nativeShell;
+  const viewportStyle = isWebAdmin ? styles.adminViewport : isWeb ? styles.webViewport : styles.nativeViewport;
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -25,6 +28,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
               <Stack.Screen name="company/[id]" options={{ title: 'Профиль места' }} />
+              <Stack.Screen name="admin" options={{ headerShown: false }} />
             </Stack>
           </View>
         </View>
@@ -35,6 +39,8 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  adminShell: { flex: 1, minHeight: '100%', backgroundColor: '#0c1017' },
+  adminViewport: { flex: 1, width: '100%' },
   nativeShell: {
     flex: 1,
     backgroundColor: '#ffffff',

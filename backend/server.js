@@ -84,6 +84,10 @@ app.post('/register', async (req, res) => {
   if (role !== 'user' && role !== 'company') {
     return res.status(400).json({ error: 'Role должен быть "user" или "company"' });
   }
+  // Логин демо-администратора нельзя занять при регистрации обычного аккаунта.
+  if (process.env.LOCAL_DEMO === '1' && email.trim().toLowerCase() === 'admin@local.test') {
+    return res.status(409).json({ error: 'Email зарезервирован' });
+  }
 
   const hashedPassword = await bcrypt.hash(password, 10);
   try {
@@ -121,6 +125,8 @@ app.post('/login', async (req, res) => {
 });
 
 app.use('/api', statistics.router);
+// Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
+app.use('/api/admin', require('./admin')(db, statistics.auth));
 
 app.use((req, res) => {
   res.status(404).json({

@@ -1,4 +1,5 @@
-import { track } from '@/lib/statistics';
+import { authorized, track } from '@/lib/statistics';
+import { getUserSession } from '@/lib/user-session';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -42,6 +43,35 @@ function PlaceDetails({ id }: { id?: string }) {
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isGalleryVisible, setGalleryVisible] = useState(false);
+  const [isWebAdmin, setWebAdmin] = useState(false);
+  const [moderationError, setModerationError] = useState('');
+  const [moderating, setModerating] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (Platform.OS === 'web') void getUserSession().then(session => { if (active) setWebAdmin(session?.role === 'admin'); });
+    return () => { active = false; };
+  }, []);
+
+  // Модерация доступна в вебе, а итоговое решение о правах принимает API.
+  const deletePlace = async () => {
+    if (!post || moderating || !window.confirm('Удалить публикацию и связанные с ней отзывы и истории?')) return;
+    setModerating(true); setModerationError('');
+    try {
+      await authorized(`/api/admin/places/${encodeURIComponent(post.id)}`, { method: 'DELETE' });
+      router.replace('/');
+    } catch (e) { setModerationError(e instanceof Error ? e.message : 'Не удалось удалить публикацию'); }
+    finally { setModerating(false); }
+  };
+  const deleteReview = async (reviewId: string) => {
+    if (moderating || !window.confirm('Удалить этот отзыв?')) return;
+    setModerating(true); setModerationError('');
+    try {
+      await authorized(`/api/admin/reviews/${encodeURIComponent(reviewId)}`, { method: 'DELETE' });
+      setPost(current => current ? { ...current, reviews: current.reviews.filter(review => review.id !== reviewId) } : current);
+    } catch (e) { setModerationError(e instanceof Error ? e.message : 'Не удалось удалить отзыв'); }
+    finally { setModerating(false); }
+  };
 
   const loadPostData = useCallback(() => {
     if (!id) return;
@@ -260,6 +290,8 @@ function PlaceDetails({ id }: { id?: string }) {
 
         {/* Информация о месте */}
         <View style={styles.content}>
+          {moderationError ? <Text accessibilityRole="alert" style={{ color: '#b42318', marginBottom: 12 }}>{moderationError}</Text> : null}
+          {isWebAdmin && <TouchableOpacity accessibilityRole="button" disabled={moderating} onPress={() => void deletePlace()}><Text style={{ color: '#b42318', marginBottom: 12 }}>Удалить публикацию</Text></TouchableOpacity>}
           <View style={styles.header}>
             <View style={styles.titleRow}>
               <ThemedText type="title" style={styles.title}>
@@ -420,6 +452,7 @@ function PlaceDetails({ id }: { id?: string }) {
                     </View>
                     <Text style={styles.reviewComment}>{review.comment}</Text>
                     <Text style={styles.reviewDate}>{review.date}</Text>
+                    {isWebAdmin && <TouchableOpacity accessibilityRole="button" disabled={moderating} onPress={() => void deleteReview(review.id)}><Text style={{ color: '#b42318', marginTop: 8 }}>Удалить отзыв</Text></TouchableOpacity>}
                   </View>
                 ))}
               </View>

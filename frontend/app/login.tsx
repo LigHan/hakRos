@@ -69,7 +69,8 @@ export default function AuthScreen() {
         favorites: [], liked: [], following: [], surname: user.surname ?? null, role: user.role,
       };
       await setUserSession(session);
-      router.replace('/profile');
+      // Сервер определяет роль; администратору открываем отдельную панель.
+      router.replace(user.role === 'admin' && Platform.OS === 'web' ? '/admin' : '/profile');
     } catch (error) {
       console.error('❌ Ошибка при создании сессии:', error);
       setAuthError(error instanceof Error ? error.message : 'Не удалось войти в систему.');
@@ -110,7 +111,7 @@ export default function AuthScreen() {
               </Text>
             </View>
 
-            <View style={styles.accountTypeWrapper}>
+            {isRegister && <View style={styles.accountTypeWrapper}>
               <Text style={styles.accountTypeLabel}>
                 {isRegister ? 'Тип аккаунта' : 'Войти как'}
               </Text>
@@ -154,7 +155,7 @@ export default function AuthScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </View>}
 
             {isRegister && !isCompany && (
               <View style={styles.fieldGroup}>

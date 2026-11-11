@@ -13,6 +13,12 @@ module.exports = function createStatistics(db) {
   const all = (sql, params=[]) => new Promise((resolve,reject)=>db.all(sql,params,(e,r)=>e?reject(e):resolve(r)));
   const issue = user => { const token=crypto.randomBytes(32).toString('hex'); sessions.set(token,{...user, expires:Date.now()+12*60*60*1000}); return token; };
   const readToken = req => /^Bearer ([a-f0-9]{64})$/.exec(req.get('Authorization') || '')?.[1];
+  function optionalAuth(req, _res, next) {
+    const token=readToken(req), session=sessions.get(token);
+    if (session && session.expires > Date.now()) req.account=session;
+    else if (token) sessions.delete(token);
+    next();
+  }
   function auth(req,res,next) {
     const token=readToken(req), session=sessions.get(token);
     if (!session || session.expires <= Date.now()) { if(token) sessions.delete(token); return res.status(401).json({error:'Требуется вход в аккаунт'}); }
@@ -50,11 +56,11 @@ module.exports = function createStatistics(db) {
         if(!existing) await run('INSERT INTO users(email,name,surname,password,role) VALUES(?,?,NULL,?,?)',[item.email,item.name,await bcrypt.hash('demo1234',10),item.role]);
       }
       const owner=await get('SELECT id FROM users WHERE email=?',['company@local.test']);
-      const post=await get('SELECT id FROM posts ORDER BY id LIMIT 1');
+      const post=await get('SELECT id FROM posts WHERE id = ?', ['1']);
       if(owner&&post) await run('INSERT OR IGNORE INTO local_place_owners(place_id,owner_id) VALUES(?,?)',[post.id,String(owner.id)]);
     }
   }
   // Админка использует ту же серверную проверку токена, что и статистика.
-  return {router,issue,initialize,auth};
+  return {router,issue,initialize,auth,optionalAuth};
 };
 

@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { getCompanyPlaces } from '@/lib/company-places';
 import { getConnections, type Connections } from '@/lib/connections';
 import { ApiError, authorized } from '@/lib/statistics';
 import { ThemedText } from '@/components/themed-text';
@@ -68,13 +69,17 @@ export default function ProfileScreen() {
           // Загружаем посты из API бэкенда
           let postsData: Post[];
           try {
-            postsData = await databaseService.getPosts();
+            postsData = userSession.role === 'company'
+              ? await getCompanyPlaces(controller.signal)
+              : await databaseService.getPosts();
             console.log('✅ Посты загружены с бэкенда:', postsData.length);
           } catch (apiError) {
             console.warn('⚠️ Бэкенд недоступен, используем пустые данные:', apiError);
             if (controller.signal.aborted) return;
             postsData = [];
-            setError('Бэкенд временно недоступен. Некоторые данные могут быть недоступны.');
+            setError(apiError instanceof ApiError && apiError.status === 401
+              ? 'Войдите снова, чтобы загрузить заведения.'
+              : 'Бэкенд временно недоступен. Некоторые данные могут быть недоступны.');
           }
 
           if (controller.signal.aborted) return;
@@ -125,7 +130,6 @@ export default function ProfileScreen() {
     }, [router])
   );
 
-  const sessionHandle = session?.handle ?? '';
   const isCompany = session?.accountType === 'company';
   const subscriptions = connections?.subscriptions ?? [];
   const subscriptionCount = connections?.subscriptions.length;
@@ -141,14 +145,7 @@ export default function ProfileScreen() {
     [likedPosts, allPosts]
   );
 
-  // Для компаний: фильтруем посты по userHandle (username компании)
-  const companyPosts = useMemo(
-    () =>
-      isCompany && session
-        ? allPosts.filter(post => post.userHandle === sessionHandle)
-        : [],
-    [isCompany, session, allPosts, sessionHandle]
-  );
+  const companyPosts = useMemo(() => isCompany ? allPosts : [], [isCompany, allPosts]);
 
   const companyFollowers = companyPosts.reduce((sum, post) => sum + (post.followers || 0), 0);
   const companyTotalLikes = companyPosts.reduce((sum, post) => sum + (post.totalLikes || post.likes || 0), 0);
@@ -170,7 +167,7 @@ export default function ProfileScreen() {
   const headerStats = useMemo(() => {
     if (isCompany) {
       return [
-        { label: 'Постов', value: formatNumber(companyPosts.length) },
+        { label: 'Заведений', value: formatNumber(companyPosts.length) },
         { label: 'Лайков', value: formatNumber(companyTotalLikes) },
         { label: 'Подписчиков', value: formatNumber(companyFollowers) },
       ];
@@ -293,6 +290,16 @@ export default function ProfileScreen() {
 
         {isCompany ? (
           <>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Управлять заведениями"
+              style={styles.managePlaces}
+              onPress={() => router.push('/manage-places')}
+            >
+              <Ionicons name="business-outline" size={20} color="#2563eb" />
+              <Text style={styles.friendsLinkLabel}>Управлять заведениями</Text>
+              <Ionicons name="chevron-forward" size={18} color="#2563eb" />
+            </TouchableOpacity>
             <View style={styles.companyActions}>
               <TouchableOpacity style={styles.companyActionPrimary} onPress={handleUploadPost} activeOpacity={0.85}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#f8fafc" />
@@ -305,9 +312,9 @@ export default function ProfileScreen() {
             </View>
 
             <ProfileSection
-              title="Мои публикации"
-              subtitle={`${companyPosts.length} постов`}
-              emptyText="Создайте первый пост, чтобы рассказать о своих новостях."
+              title="Мои заведения"
+              subtitle={`Всего ${companyPosts.length}`}
+              emptyText="Добавьте карточку в кабинете компании."
               isEmpty={companyPosts.length === 0}
             >
               {companyPosts.length > 0 ? (
@@ -315,7 +322,7 @@ export default function ProfileScreen() {
                   items={companyPosts.map(item => ({
                     id: item.id,
                     title: item.place,
-                    subtitle: item.tags?.join(' • ') || 'Без тегов',
+                    subtitle: item.address || 'Адрес не указан',
                     image: item.image,
                   }))}
                   onPress={handleOpenCompany}
@@ -515,6 +522,15 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   friendsLinkLabel: { color: '#1d4ed8', fontWeight: '700' },
+  managePlaces: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#dbeafe',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f1f5f9',

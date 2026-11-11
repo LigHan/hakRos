@@ -7,6 +7,9 @@ const db = require('./db');
 const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
 const connections = require('./connections')(db, statistics.auth);
+const map = require('./map')(db, statistics.auth, statistics.optionalAuth);
+const path = require('node:path');
+const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,6 +25,7 @@ const endpoints = [
   'POST /register',
   'POST /login',
   'GET /api/connections',
+  'GET /api/company/places',
 ];
 
 app.use(cors({
@@ -29,7 +33,11 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+app.use('/api/company/places', companyPlaces.router);
 app.use(express.json());
+app.use('/map-assets', express.static(path.join(__dirname, 'map-assets')));
+app.use('/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist')));
+app.use('/api/map', map.router);
 
 app.get('/', (_req, res) => {
   res.json({ message: 'Сервер работает!', endpoints: ['GET /api', ...endpoints] });
@@ -46,6 +54,8 @@ app.get('/api/posts', async (_req, res) => {
 app.get('/api/stories', async (_req, res) => {
   res.json(await databaseService.getStories());
 });
+
+app.get('/api/place-covers/:placeId/:version', companyPlaces.getCover);
 
 app.get('/api/posts/:id', async (req, res) => {
   const post = await databaseService.getPostById(req.params.id);
@@ -126,6 +136,7 @@ app.post('/login', async (req, res) => {
   });
 });
 
+app.post('/api/logout', statistics.auth, (req, _res, next) => { map.hide(req.account.id); next(); });
 app.use('/api', statistics.router);
 app.use('/api/connections', connections.router);
 // Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
@@ -158,6 +169,8 @@ function reportStartupError(error) {
 db.ready.then(async () => {
   await statistics.initialize();
   await connections.initialize();
+  await map.initialize();
+  await companyPlaces.initialize();
   const server = app.listen(PORT, HOST, error => {
     if (error) {
       reportStartupError(error);

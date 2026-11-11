@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="stylesheet" href="/maplibre/maplibre-gl.css">
+  <script src="/maplibre/maplibre-gl.js"></script>
+  <script src="/map-assets/boundary-clip.js"></script>
+  <style>
+    html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#eaf1fa}
+    #status{position:absolute;top:12px;left:12px;right:12px;background:white;color:#334155;padding:10px;border-radius:10px;z-index:2;display:none}
+    .pin{border:3px solid white;box-shadow:0 2px 8px #33415566;width:26px;height:26px;border-radius:50%;background:#2563eb;cursor:pointer}
+    .person{background:#ff2d55}.chosen{background:#ffb800;width:20px;height:20px}
+    .maplibregl-ctrl-bottom-right{bottom:6px}.maplibregl-ctrl-attrib{font-size:11px}
+  </style>
+</head>
+<body><div id="map"></div><div id="status" role="alert"></div>
+<script>
+  const status = document.getElementById('status');
+  const notify = value => {
+    const message = JSON.stringify(value);
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(message);
+    else if (window.parent !== window) window.parent.postMessage(value, '*');
+  };
+  function error(message) { status.textContent = message; status.style.display = 'block'; notify({type:'error', message}); }
+  let map, ready = false, state = {}, markers = [];
+  function render() {
+    if (!ready) return;
+    markers.forEach(marker => marker.remove()); markers = [];
+    for (const point of [...(state.places || []), ...(state.people || [])]) {
+      if (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) continue;
+      const element = document.createElement('button');
+      element.className = 'pin' + (point.kind === 'person' ? ' person' : '');
+      element.setAttribute('aria-label', point.name);
+      // Клик по маркеру открывает его карточку и не выбирает новую точку карты.
+      element.addEventListener('click', event => event.stopPropagation());
+      const content = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = point.name;
+      const details = document.createElement('div');
+      details.textContent = `${point.kind === 'person' ? 'Пользователь' : 'Место'} · ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
+      content.append(title, details);
+      if (point.isOwn && point.reviewStatus) {
+        const review = document.createElement('div');
+        review.textContent = {private:'Видно вам и друзьям',pending:'На проверке',approved:'Опубликовано'}[point.reviewStatus] || '';
+        content.append(review);
+        if (point.reviewStatus === 'private') {
+          const submit = document.createElement('button'); submit.textContent = 'Отправить на проверку';
+          submit.addEventListener('click', event => { event.stopPropagation(); notify({type:'submit',id:point.id}); });
+          content.append(submit);
+        }
+      }
+      const marker = new maplibregl.Marker({element}).setLngLat([point.longitude, point.latitude])
+        .setPopup(new maplibregl.Popup({offset: 20}).setDOMContent(content)).addTo(map);
+      markers.push(marker);
+    }
+    if (state.selected) {
+      const element = document.createElement('div'); element.className = 'pin chosen';
+      markers.push(new maplibregl.Marker({element}).setLngLat([state.selected.longitude, state.selected.latitude]).addTo(map));
+    }
+  }
+  window.applyMapState = function(next) {
+    state = next || {}; render();
+    if (ready && state.center && state.center.sequence !== window.lastCenterSequence) {
+      window.lastCenterSequence = state.center.sequence;
+      map.flyTo({center:[state.center.longitude,state.center.latitude],zoom:15});
+    }
+  };
+  window.addEventListener('message', event => {
+    if (event.source !== window.parent || !event.data || event.data.type !== 'hakros-map-state') return;
+    window.applyMapState(event.data.state);
+  });
+  async function applyRussianRegionalView() {
+    const [response, maskResponse, promotionResponse] = await Promise.all([fetch('/map-assets/regions-ru.json'), fetch('/map-assets/border-mask.json'), fetch('/map-assets/promotion-mask.json')]);
+    if (!response.ok || !maskResponse.ok || !promotionResponse.ok) throw new Error('Не удалось загрузить границы регионов');
+    const [regions, borderMask, promotionMask] = await Promise.all([response.json(), maskResponse.json(), promotionResponse.json()]);
+    // Ограничиваем изменение стилем карты: исходные данные OSM и поиск не меняются.
+    for (const layer of map.getStyle().layers) {
+      if (layer.type !== 'symbol') continue;
+      const originalText = map.getLayoutProperty(layer.id, 'text-field');
+      if (!originalText || !JSON.stringify(originalText).includes('name:nonlatin')) continue;
+      // В тайлах нет перевода части названий: в таком случае используем английский
+      // или латинский вариант, а при отсутствии обоих не выводим исходную подпись.
+      map.setLayoutProperty(layer.id, 'text-field', ['case', ['within', regions.mask],
+        ['coalesce', ['get', 'name:ru'], ['get', 'name:en'], ['get', 'name:latin'], ''], originalText]);
+    }
+    const baseBorder = map.getStyle().layers.find(layer => layer.id === 'boundary_2');
+    const baseRegional = map.getStyle().layers.find(layer => layer.id === 'boundary_3');
+    const baseDisputed = map.getStyle().layers.find(layer => layer.id === 'boundary_disputed');
+    const baseLabel = map.getStyle().layers.find(layer => layer.id === 'label_state');
+    for (const id of ['boundary_2', 'boundary_disputed', 'label_state']) {
+      if (!map.getLayer(id)) continue;
+      const original = map.getFilter(id);
+      // Граничные линии могут пересекать край маски: within в таком случае
+      // возвращает false, поэтому для линий проверяем расстояние до маски.
+      const outside = id === 'label_state'
+        ? ['!', ['within', regions.mask]]
+        : ['>', ['distance', borderMask], 0];
+      map.setFilter(id, ['all', original || true, outside]);
+    }
+    if (baseRegional) map.setFilter('boundary_3', ['all', map.getFilter('boundary_3') || true,
+      ['any', ['!=', ['get','admin_level'], 4], ['>', ['distance', promotionMask], 0]]]);
+    // Фильтр MapLibre применяется к объекту целиком, а в одном объекте могут
+    // находиться границы нескольких стран. Возвращаем части вне маски отдельно.
+    map.addSource('boundary-restored', {type:'geojson', data:{type:'FeatureCollection',features:[]}});
+    const promotedPaint = {...baseBorder?.paint, 'line-color':'#000', 'line-width':['interpolate',['linear'],['zoom'],3,0.8,5,1,12,2.5]};
+    for (const [original, id, kind] of [[baseBorder, 'boundary-restored-normal', 'normal'], [baseDisputed, 'boundary-restored-disputed', 'disputed'], [baseRegional, 'boundary-restored-regional', 'regional']]) {
+      if (!original) continue;
+      map.addLayer({id, type:'line', source:'boundary-restored', ...(original.minzoom != null ? {minzoom:original.minzoom} : {}), ...(original.maxzoom != null ? {maxzoom:original.maxzoom} : {}), filter:['==', ['get', 'kind'], kind], layout:original.layout || {}, paint:original.paint || {}}, 'label_state');
+    }
+    map.addLayer({id:'boundary-promoted', type:'line', source:'boundary-restored', minzoom:5, filter:['==',['get','kind'],'promoted'], layout:baseBorder?.layout || {}, paint:promotedPaint}, 'label_state');
+    const clipper = BoundaryClip.build(borderMask);
+    const promotionClipper = BoundaryClip.build(promotionMask);
+    let refreshTimer;
+    const refreshBoundaries = () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        const restored = [], seen = new Set();
+        for (const feature of map.querySourceFeatures('openmaptiles', {sourceLayer:'boundary'})) {
+          const p = feature.properties || {};
+          if (Number(p.maritime) === 1) continue;
+          const disputed = Number(p.disputed) === 1;
+          const level = Number(p.admin_level);
+          const regional = map.getZoom() >= 5 && !disputed && p.claimed_by == null && level === 4;
+          const national = disputed || (level === 2 && p.claimed_by == null);
+          if (!national && !regional) continue;
+          const key = JSON.stringify([feature.geometry, level, disputed]);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          if (national) {
+            const clipped = clipper.clip(feature.geometry);
+            if (clipped.affected && clipped.coordinates.length) restored.push({type:'Feature',properties:{kind:disputed?'disputed':'normal'},geometry:{type:'MultiLineString',coordinates:clipped.coordinates}});
+          }
+          if (regional) {
+            const split = promotionClipper.split(feature.geometry);
+            if (split.affected && split.outside.length) restored.push({type:'Feature',properties:{kind:'regional'},geometry:{type:'MultiLineString',coordinates:split.outside}});
+            if (split.affected && split.inside.length) restored.push({type:'Feature',properties:{kind:'promoted'},geometry:{type:'MultiLineString',coordinates:split.inside}});
+          }
+        }
+        map.getSource('boundary-restored').setData({type:'FeatureCollection',features:restored});
+      }, 100);
+    };
+    map.on('sourcedata', event => { if (event.sourceId === 'openmaptiles' && event.isSourceLoaded) refreshBoundaries(); });
+    map.on('moveend', refreshBoundaries);
+    refreshBoundaries();
+    map.addSource('regional-border-ru', {type:'geojson', data:{type:'Feature', properties:{}, geometry:regions.boundary}});
+    // Региональных границ в тайлах низких масштабов нет; для них нужен обзорный контур.
+    map.addLayer({id:'regional-border-ru', type:'line', source:'regional-border-ru', maxzoom:5, layout:baseBorder?.layout || {}, paint:promotedPaint}, map.getLayer('label_state') ? 'label_state' : undefined);
+    map.addSource('regional-labels-ru', {type:'geojson', data:{type:'FeatureCollection',features:regions.features}});
+    map.addLayer({id:'regional-labels-ru', type:'symbol', source:'regional-labels-ru', minzoom:baseLabel?.minzoom ?? 5, maxzoom:baseLabel?.maxzoom ?? 8,
+      layout:{...baseLabel?.layout, 'text-field':['get','label']},
+      paint:{...baseLabel?.paint, 'text-color':'#000'}});
+  }
+  try {
+    if (!window.maplibregl) throw new Error('Не удалось загрузить библиотеку карты');
+    map = new maplibregl.Map({container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[37.8026,48.0158], zoom:12});
+    map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
+    map.on('load', async () => {
+      // Сохраняем структуру и подписи поставщика, меняя цвета основных слоёв.
+      for (const layer of map.getStyle().layers) {
+        const id = layer.id.toLowerCase();
+        try {
+          if (layer.type === 'background') map.setPaintProperty(layer.id,'background-color','#f2f6fb');
+          else if (layer.type === 'fill' && id.includes('water')) map.setPaintProperty(layer.id,'fill-color','#b8d5f4');
+          else if (layer.type === 'fill' && (id.includes('park') || id.includes('landcover'))) map.setPaintProperty(layer.id,'fill-color','#d7ebdf');
+          else if (layer.type === 'line' && id.includes('road')) map.setPaintProperty(layer.id,'line-color','#cbd9e9');
+        } catch (_) { /* Стили поставщика могут отличаться. */ }
+      }
+      try { await applyRussianRegionalView(); status.style.display = 'none'; }
+      catch (_) { error('Не удалось применить настройки границ. Проверьте соединение и обновите карту.'); }
+      ready = true;
+      render(); window.applyMapState(state); notify({type:'ready'});
+    });
+    map.on('click', event => {
+      if (event.originalEvent.target instanceof Element && event.originalEvent.target.closest('.pin')) return;
+      notify({type:'click', latitude:event.lngLat.lat, longitude:event.lngLat.lng});
+    });
+    map.on('error', event => { if (!ready) error('Не удалось загрузить карту: ' + String(event.error?.message || 'неизвестная ошибка')); });
+    setTimeout(() => { if (!ready) error('Карта не загрузилась. Проверьте интернет и попробуйте обновить страницу.'); }, 15000);
+  } catch (_) { error('Не удалось загрузить карту. Проверьте интернет и попробуйте снова.'); }
+</script></body></html>

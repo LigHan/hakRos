@@ -1,10 +1,13 @@
+import { useAppStyles } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Image,
   Platform,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,34 +16,44 @@ import {
 } from 'react-native';
 
 import { getConnections, type Connections } from '@/lib/connections';
-import { ApiError, authorized } from '@/lib/statistics';
+import { ApiError } from '@/lib/statistics';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
 import {
   getFavoritePosts,
   getFavoritePostsCount,
-  getLikedPosts,
-  getLikedPostsCount
 } from '@/lib/likes-favorites';
 import {
-  clearUserSession,
   getUserSession,
   type UserSession,
 } from '@/lib/user-session';
 
+// Visual reference data belongs only to the dedicated local demo account.
+const demoProfile = {
+  name: 'Мария Лебедева',
+  subtitle: 'Студентка МГУ',
+  status: 'Ищу новые места после пар ✨',
+  avatar: 'https://images.unsplash.com/photo-1747671688812-76d7bca21f34?auto=format&fit=crop&w=300&q=80',
+  places: [
+    { name: 'Кофейня «Клевер»', rating: '4,8', tag: 'Кофейни', saved: true, image: 'https://images.unsplash.com/photo-1777451441095-c7ef2f875929?auto=format&fit=crop&w=320&q=80' },
+    { name: 'Скалодром «Высота»', rating: '4,8', tag: 'Спорт', saved: false, image: 'https://images.unsplash.com/photo-1756821725793-c90c88407c59?auto=format&fit=crop&w=320&q=80' },
+    { name: 'Музей современного искусства', rating: '4,7', tag: 'Выставки', saved: true, image: 'https://images.unsplash.com/photo-1635172562604-3ba8826afc34?auto=format&fit=crop&w=320&q=80' },
+  ],
+};
+
 export default function ProfileScreen() {
+  const styles = useAppStyles(baseStyles);
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [session, setSession] = useState<UserSession | null>(null);
-  const [likedPosts, setLikedPosts] = useState<string[]>([]);
+  const [profileTab, setProfileTab] = useState<'places' | 'posts' | 'stories'>('places');
   const [favoritePosts, setFavoritePosts] = useState<string[]>([]);
-  const [likedCount, setLikedCount] = useState(0);
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connections, setConnections] = useState<Connections | null>(null);
-  const [connectionsError, setConnectionsError] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -50,7 +63,6 @@ export default function ProfileScreen() {
         setLoading(true);
         setError(null);
         setConnections(null);
-        setConnectionsError('');
 
         const userSession = await getUserSession();
         if (controller.signal.aborted) return;
@@ -83,18 +95,16 @@ export default function ProfileScreen() {
           const connectionsRequest = userSession.role === 'user'
             ? getConnections(controller.signal).catch(cause => {
               if (!controller.signal.aborted) {
-                setConnectionsError(cause instanceof ApiError && cause.status === 401
-                  ? 'Войдите снова, чтобы загрузить подписки.'
-                  : 'Не удалось загрузить подписки.');
+                console.warn(cause instanceof ApiError && cause.status === 401
+                  ? 'Войдите снова, чтобы загрузить друзей.'
+                  : 'Не удалось загрузить друзей.');
               }
               return null;
             })
             : Promise.resolve(null);
 
-          const [liked, favorites, likedCount, favoriteCount, connectionsData] = await Promise.all([
-            getLikedPosts(),
+          const [favorites, favoriteCount, connectionsData] = await Promise.all([
             getFavoritePosts(),
-            getLikedPostsCount(),
             getFavoritePostsCount(),
             connectionsRequest,
           ]);
@@ -102,15 +112,11 @@ export default function ProfileScreen() {
           setConnections(connectionsData);
 
           console.log('📊 Данные профиля загружены:', {
-            liked: liked.length,
             favorites: favorites.length,
-            likedCount,
             favoriteCount
           });
 
-          setLikedPosts(liked);
           setFavoritePosts(favorites);
-          setLikedCount(likedCount);
           setFavoriteCount(favoriteCount);
         } catch (error) {
           console.error('❌ Ошибка загрузки данных профиля:', error);
@@ -127,18 +133,12 @@ export default function ProfileScreen() {
 
   const sessionHandle = session?.handle ?? '';
   const isCompany = session?.accountType === 'company';
-  const subscriptions = connections?.subscriptions ?? [];
-  const subscriptionCount = connections?.subscriptions.length;
+  const isDemoProfile = session?.email === 'demo-ef9e4f@hakros.local';
 
   // Используем данные для получения постов
   const favorites = useMemo(
     () => allPosts.filter(post => favoritePosts.includes(post.id)),
     [favoritePosts, allPosts]
-  );
-
-  const liked = useMemo(
-    () => allPosts.filter(post => likedPosts.includes(post.id)),
-    [likedPosts, allPosts]
   );
 
   // Для компаний: фильтруем посты по userHandle (username компании)
@@ -176,19 +176,20 @@ export default function ProfileScreen() {
       ];
     }
 
+    if (isDemoProfile) return [{ label: 'постов', value: '48' }, { label: 'друзей', value: '132' }, { label: 'сохранённых', value: '27' }];
     return [
-      { label: 'Избранное', value: formatNumber(favoriteCount) },
-      { label: 'Понравилось', value: formatNumber(likedCount) },
-      { label: 'Подписки', value: subscriptionCount === undefined ? '—' : formatNumber(subscriptionCount) },
+      { label: 'постов', value: '—' },
+      { label: 'друзей', value: connections ? formatNumber(connections.friends.length) : '—' },
+      { label: 'сохранённых', value: formatNumber(favoriteCount) },
     ];
   }, [
     companyFollowers,
     companyPosts.length,
     companyTotalLikes,
+    connections,
     favoriteCount,
     isCompany,
-    likedCount,
-    subscriptionCount
+    isDemoProfile
   ]);
 
   const handleOpenCompany = (id: string) => {
@@ -203,21 +204,21 @@ export default function ProfileScreen() {
     Alert.alert('Выложить новинку', 'Скоро вы сможете делиться новинками и акциями напрямую с подписчиками.');
   };
 
-  const handleLogout = async () => {
-    await authorized('/api/logout', {method: 'POST'}).catch(() => {});
-    await clearUserSession();
-    setSession(null);
-    setConnections(null);
-    setLikedPosts([]);
-    setFavoritePosts([]);
-    setAllPosts([]);
-    router.replace('/login');
+  const shareProfile = async () => {
+    const message = 'Откройте для себя новые места вместе с hakRos!';
+    try {
+      if (Platform.OS === 'web') {
+        if (navigator.share) await navigator.share({ text: message });
+        else if (navigator.clipboard) await navigator.clipboard.writeText(message);
+        else Alert.alert('Поделиться', message);
+      } else await Share.share({ message });
+    } catch (cause) { console.warn('Не удалось поделиться', cause); }
   };
 
   if (!session || loading) {
     return (
       <ThemedView style={styles.loadingContainer}>
-        <Ionicons name="person-circle-outline" size={48} color="#007AFF" />
+        <Ionicons name="person-circle-outline" size={48} color="#606C38" />
         <Text style={styles.loadingText}>Загрузка профиля...</Text>
       </ThemedView>
     );
@@ -226,51 +227,30 @@ export default function ProfileScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top + 8, 24) }]}
         showsVerticalScrollIndicator={false}
       >
-        {Platform.OS === 'web' && session.role === 'admin' && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/admin')} style={{ backgroundColor: '#0f172a', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Панель администратора</Text></TouchableOpacity>}
-        <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/statistics')} style={{ backgroundColor: '#2563eb', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Открыть статистику</Text></TouchableOpacity>
-        {session.role === 'user' && (
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Друзья"
-            style={styles.friendsLink}
-            onPress={() => router.push('/connections')}
-          >
-            <Ionicons name="people-outline" size={22} color="#2563eb" />
-            <Text style={styles.friendsLinkLabel}>Друзья</Text>
-            {!!connections?.incomingRequests.length && (
-              <Text style={styles.friendsLinkLabel}>{connections.incomingRequests.length}</Text>
-            )}
-            <Ionicons name="chevron-forward" size={18} color="#2563eb" />
-          </TouchableOpacity>
-        )}
+        <View style={styles.profileHeader}>
+          <ThemedText type="title" style={styles.profileTitle}>Профиль</ThemedText>
+          <View style={styles.headerActions}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Поделиться" onPress={() => void shareProfile()} style={styles.settingsButton}><Ionicons name="share-outline" size={24} color="#283618" /></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Настройки" onPress={() => router.push('/settings')} style={styles.settingsButton}><Ionicons name="settings-outline" size={24} color="#283618" /></TouchableOpacity>
+          </View>
+        </View>
         {error && (
           <View style={styles.errorBanner}>
-            <Ionicons name="warning-outline" size={20} color="#f59e0b" />
+            <Ionicons name="warning-outline" size={20} color="#BC6C25" />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
-
         <View style={styles.headerCard}>
-          <Image
-            source={{ uri: session.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80' }}
-            style={styles.avatar}
-          />
-          <ThemedText type="title" style={styles.displayName}>
-            {session.name}
-          </ThemedText>
-          {session.surname && !isCompany && (
-            <Text style={styles.surname}>{session.surname}</Text>
-          )}
-          <Text style={styles.handle}>@{session.handle}</Text>
-          <Text style={styles.email}>{session.email}</Text>
-          <View style={styles.accountTag}>
-            <Ionicons name={isCompany ? 'business' : 'person'} size={16} color="#2563eb" />
-            <Text style={styles.accountTagText}>
-              {isCompany ? 'Аккаунт компании' : 'Личный аккаунт'}
-            </Text>
+          <View style={styles.profileIdentityRow}>
+            {isDemoProfile || session.avatar ? <Image source={{ uri: isDemoProfile ? demoProfile.avatar : session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
+            <View style={styles.profileIdentity}>
+              <ThemedText type="title" style={styles.displayName}>{isDemoProfile ? demoProfile.name : `${session.name}${session.surname && !isCompany ? ` ${session.surname}` : ''}`}</ThemedText>
+              {isDemoProfile && <Text style={styles.profileSubtitle}>{demoProfile.subtitle}</Text>}
+              {isDemoProfile && <View style={styles.accountTag}><Text style={styles.accountTagText}>{demoProfile.status}</Text></View>}
+            </View>
           </View>
           <View style={styles.statsRow}>
             {headerStats.map(stat => (
@@ -280,16 +260,9 @@ export default function ProfileScreen() {
               </View>
             ))}
           </View>
-          {isCompany && companyRecentLikes > 0 && (
-            <Text style={styles.subStatNote}>
-              {`+${formatNumber(companyRecentLikes)} лайков на последних постах`}
-            </Text>
-          )}
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.85}>
-            <Ionicons name="log-out-outline" size={18} color="#ef4444" />
-            <Text style={styles.logoutText}>Выйти из аккаунта</Text>
-          </TouchableOpacity>
+          {isCompany && companyRecentLikes > 0 && <Text style={styles.subStatNote}>{`+${formatNumber(companyRecentLikes)} лайков на последних постах`}</Text>}
         </View>
+
 
         {isCompany ? (
           <>
@@ -299,7 +272,7 @@ export default function ProfileScreen() {
                 <Text style={styles.companyActionPrimaryText}>Выложить пост</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.companyActionSecondary} onPress={handlePublishHighlight} activeOpacity={0.85}>
-                <Ionicons name="sparkles-outline" size={18} color="#2563eb" />
+                <Ionicons name="sparkles-outline" size={18} color="#606C38" />
                 <Text style={styles.companyActionSecondaryText}>Выложить новинку</Text>
               </TouchableOpacity>
             </View>
@@ -338,7 +311,7 @@ export default function ProfileScreen() {
                     onPress={() => handleOpenCompany(review.postId)}
                   >
                     <View style={styles.companyReviewHeader}>
-                      <Ionicons name="person-circle-outline" size={20} color="#2563eb" />
+                      <Ionicons name="person-circle-outline" size={20} color="#606C38" />
                       <View style={styles.companyReviewMeta}>
                         <Text style={styles.companyReviewAuthor}>{review.author}</Text>
                         <Text style={styles.companyReviewPlace}>{review.place}</Text>
@@ -357,76 +330,25 @@ export default function ProfileScreen() {
           </>
         ) : (
           <>
-            <ProfileSection
-              title="Избранное"
-              subtitle={`${favorites.length} мест`}
-              emptyText="Сохраняйте интересные места, чтобы быстро возвращаться к ним."
-              isEmpty={favorites.length === 0}
-            >
-              {favorites.length > 0 ? (
-                <HorizontalCollection
-                  items={favorites.map(item => ({
-                    id: item.id,
-                    title: item.place,
-                    subtitle: item.user,
-                    image: item.image,
-                  }))}
-                  onPress={handleOpenCompany}
-                />
-              ) : null}
-            </ProfileSection>
-
-            <ProfileSection
-              title="Понравилось"
-              subtitle={`${liked.length} мест`}
-              emptyText="Отмечайте понравившиеся локации, чтобы они не потерялись."
-              isEmpty={liked.length === 0}
-            >
-              {liked.length > 0 ? (
-                <HorizontalCollection
-                  items={liked.map(item => ({
-                    id: item.id,
-                    title: item.place,
-                    subtitle: item.user,
-                    image: item.gallery?.[0] ?? item.image,
-                  }))}
-                  onPress={handleOpenCompany}
-                />
-              ) : null}
-            </ProfileSection>
-
-            {session.role === 'user' && (
-              <ProfileSection
-                title="Подписки на заведения"
-                subtitle={connections ? `Всего ${subscriptions.length}` : ''}
-                emptyText={connectionsError || 'Подписывайтесь на заведения из их карточек.'}
-                isEmpty={subscriptions.length === 0}
-              >
-                {subscriptions.length > 0 && (
-                  <View style={styles.followingList}>
-                    {subscriptions.map(place => (
-                      <TouchableOpacity
-                        key={place.placeId}
-                        accessibilityRole="button"
-                        style={styles.followingCard}
-                        activeOpacity={0.85}
-                        onPress={() => handleOpenCompany(place.placeId)}
-                      >
-                        <Image source={{ uri: place.avatar }} style={styles.followingAvatar} />
-                        <View style={styles.followingInfo}>
-                          <Text style={styles.followingName}>{place.name}</Text>
-                          <Text style={styles.followingHandle}>@{place.handle}</Text>
-                          {place.description ? (
-                            <Text style={styles.followingDescription} numberOfLines={2}>{place.description}</Text>
-                          ) : null}
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </ProfileSection>
-            )}
+            <View style={styles.segment}>
+              {([['places', 'Мои места'], ['posts', 'Посты'], ['stories', 'Истории']] as const).map(([key, label]) => (
+                <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: profileTab === key }} onPress={() => setProfileTab(key)} style={[styles.segmentItem, profileTab === key && styles.segmentSelected]}>
+                  <Text numberOfLines={1} style={[styles.segmentText, profileTab === key && styles.segmentTextSelected]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {profileTab === 'places' ? <View style={styles.placeSection}>
+              <View style={styles.placeHeading}><Ionicons name="location-outline" size={21} color="#283618" /><Text style={styles.placeHeadingText}>{isDemoProfile ? 'Посещённые места' : 'Сохранённые места'}</Text><Ionicons name="chevron-forward" size={19} color="#283618" /></View>
+              {isDemoProfile ? demoProfile.places.map(item => <View key={item.name} style={styles.placeRow}>
+                <Image source={{ uri: item.image }} style={styles.placeImage} />
+                <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.name}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{item.rating}</Text></Text><Text style={styles.placeTag}>{item.tag}</Text></View>
+                <Ionicons name={item.saved ? 'bookmark' : 'bookmark-outline'} size={22} color="#BC6C25" />
+              </View>) : favorites.length ? favorites.map(item => <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityLabel={`Открыть ${item.place}`} style={styles.placeRow} onPress={() => handleOpenCompany(item.id)}>
+                <Image source={{ uri: item.image }} style={styles.placeImage} />
+                <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.place}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text>{!!item.tags[0] && <Text style={styles.placeTag}>{item.tags[0]}</Text>}</View>
+                <Ionicons name="bookmark" size={22} color="#BC6C25" />
+              </TouchableOpacity>) : <Text style={styles.emptyStateText}>Сохраняйте интересные места, чтобы быстро к ним вернуться.</Text>}
+            </View> : <Text style={styles.emptyStateText}>{profileTab === 'posts' ? 'Публикации пока недоступны.' : 'Истории пока недоступны.'}</Text>}
           </>
         )}
       </ScrollView>
@@ -448,6 +370,7 @@ function HorizontalCollection({
   items: HorizontalItem[];
   onPress: (id: string) => void;
 }) {
+  const styles = useAppStyles(baseStyles);
   return (
     <ScrollView
       horizontal
@@ -490,6 +413,7 @@ function ProfileSection({
   emptyText: string;
   isEmpty: boolean;
 }) {
+  const styles = useAppStyles(baseStyles);
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -503,7 +427,35 @@ function ProfileSection({
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
+  profileHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  segment: { flexDirection: 'row', backgroundColor: '#F1EBD1', borderRadius: 22, padding: 3 },
+  segmentItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 36, borderRadius: 19, paddingHorizontal: 3 },
+  segmentSelected: { backgroundColor: '#606C38' },
+  segmentText: { color: '#283618', fontSize: 12, fontWeight: '600' },
+  segmentTextSelected: { color: '#FEFAE0' },
+  placeSection: { gap: 0 },
+  placeHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
+  placeHeadingText: { flex: 1, color: '#283618', fontSize: 15, fontWeight: '600' },
+  placeRow: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
+  placeImage: { width: 104, height: 76, borderRadius: 13 },
+  placeInfo: { flex: 1, alignItems: 'flex-start', gap: 3 },
+  placeName: { color: '#283618', fontSize: 14, fontWeight: '700' },
+  placeRating: { color: '#BC6C25', fontSize: 13 },
+  placeRatingNumber: { color: '#283618', fontWeight: '600' },
+  placeTag: { overflow: 'hidden', color: '#283618', backgroundColor: '#F0ECCD', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4, fontSize: 11 },
+  profileTitle: { color: '#283618', fontSize: 30, lineHeight: 38, fontWeight: '800' },
+  settingsButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  profileIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 16, width: '100%' },
+  profileIdentity: { flex: 1, alignItems: 'flex-start', gap: 5 },
+  avatarPlaceholder: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#F0ECCD', alignItems: 'center', justifyContent: 'center' },
+  profileSubtitle: { fontSize: 14, color: '#6F7457' },
+  menuCard: { borderRadius: 20, backgroundColor: '#FFFCED', borderWidth: 1, borderColor: '#D9D6B5', paddingHorizontal: 14 },
+  menuRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
+  menuIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#F0ECCD' },
+  menuLabel: { flex: 1, color: '#283618', fontWeight: '600', fontSize: 15 },
+  menuDetail: { color: '#BC6C25', fontWeight: '700' },
   friendsLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -511,18 +463,19 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#dbeafe',
+    backgroundColor: '#F0ECCD',
     marginBottom: 16,
   },
-  friendsLinkLabel: { color: '#1d4ed8', fontWeight: '700' },
+  friendsLinkLabel: { color: '#283618', fontWeight: '700' },
   container: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#FEFAE0',
   },
   scroll: {
     padding: 20,
-    gap: 24,
-    paddingBottom: 40,
+    gap: 14,
+    paddingTop: 38,
+    paddingBottom: 130,
   },
   errorBanner: {
     flexDirection: 'row',
@@ -540,40 +493,34 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 28,
-    padding: 24,
+    backgroundColor: '#FEFAE0',
     gap: 12,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 12,
   },
   avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
   },
   displayName: {
-    color: '#0f172a',
-    fontSize: 24,
+    color: '#283618',
+    fontSize: 19,
+    lineHeight: 25,
     fontWeight: '700',
-    textAlign: 'center',
+    textAlign: 'left',
   },
   surname: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
   handle: {
     fontSize: 14,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
   email: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: '#6F7457',
     fontStyle: 'italic',
   },
   accountTag: {
@@ -583,13 +530,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 14,
-    backgroundColor: 'rgba(37, 99, 235, 0.12)',
+    backgroundColor: '#F3EBD1',
     marginTop: 4,
   },
   accountTagText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#283618',
   },
   statsRow: {
     flexDirection: 'row',
@@ -607,18 +554,16 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0f172a',
+    color: '#283618',
   },
   statLabel: {
     fontSize: 12,
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    color: '#6F7457',
     textAlign: 'center',
   },
   subStatNote: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#6F7457',
     fontStyle: 'italic',
     textAlign: 'center',
   },
@@ -642,7 +587,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 20,
     gap: 16,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 14 },
@@ -655,13 +600,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionTitle: {
-    color: '#0f172a',
+    color: '#283618',
     fontSize: 18,
     fontWeight: '700',
   },
   sectionSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
   horizontalList: {
@@ -672,7 +617,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#f8fafc',
     overflow: 'hidden',
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
@@ -685,20 +630,20 @@ const styles = StyleSheet.create({
   collectionTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
     paddingHorizontal: 12,
     paddingTop: 10,
     lineHeight: 18,
   },
   collectionSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#6F7457',
     paddingHorizontal: 12,
     paddingBottom: 12,
   },
   emptyStateText: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: '#6F7457',
     lineHeight: 20,
     textAlign: 'center',
     fontStyle: 'italic',
@@ -714,7 +659,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#f8fafc',
     padding: 14,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -732,11 +677,11 @@ const styles = StyleSheet.create({
   followingName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   followingHandle: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#6F7457',
     textTransform: 'lowercase',
   },
   followingDescription: {
@@ -758,8 +703,8 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 20,
-    backgroundColor: '#2563eb',
-    shadowColor: '#2563eb',
+    backgroundColor: '#606C38',
+    shadowColor: '#606C38',
     shadowOpacity: 0.25,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
@@ -783,7 +728,7 @@ const styles = StyleSheet.create({
   companyActionSecondaryText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#606C38',
   },
   companyReviewsList: {
     gap: 12,
@@ -793,7 +738,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     padding: 16,
     gap: 10,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.05,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -810,12 +755,12 @@ const styles = StyleSheet.create({
   companyReviewAuthor: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   companyReviewPlace: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#606C38',
   },
   companyReviewRating: {
     flexDirection: 'row',
@@ -825,7 +770,7 @@ const styles = StyleSheet.create({
   companyReviewRatingText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#b45309',
+    color: '#BC6C25',
   },
   companyReviewComment: {
     fontSize: 14,
@@ -834,7 +779,7 @@ const styles = StyleSheet.create({
   },
   companyReviewDate: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#6F7457',
   },
   loadingContainer: {
     flex: 1,
@@ -845,7 +790,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
 });

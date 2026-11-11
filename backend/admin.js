@@ -19,6 +19,20 @@ module.exports = function createAdminRouter(db, auth) {
     res.json(await all('SELECT id, place, bio, address, category FROM posts ORDER BY place'));
   });
 
+  router.get('/map-places', async (_req, res) => {
+    res.set('Cache-Control', 'no-store').json(await all(`SELECT p.id, p.name, p.latitude, p.longitude, p.post_id AS postId,
+      p.review_status AS reviewStatus, u.name AS creatorName FROM map_places p
+      LEFT JOIN users u ON CAST(u.id AS TEXT)=p.creator_id
+      WHERE p.review_status IN ('pending','approved') ORDER BY p.created_at DESC`));
+  });
+  router.post('/map-places/:id/review', async (req, res) => {
+    const decision = req.body?.decision;
+    if (!['approve','reject'].includes(decision)) return res.status(400).json({error:'Выберите решение'});
+    const changed = await run("UPDATE map_places SET review_status=? WHERE id=? AND review_status='pending'", [decision === 'approve' ? 'approved' : 'private', req.params.id]);
+    if (!changed) return res.status(409).json({error:'Точка не ожидает проверки'});
+    res.json({ok:true});
+  });
+
   router.put('/places/:id', async (req, res) => {
     const { place, bio, address, category } = req.body || {};
     if (typeof place !== 'string' || !place.trim() || place.trim().length > 200 ||
@@ -43,6 +57,7 @@ module.exports = function createAdminRouter(db, auth) {
     // В SQL попадают только шестнадцатеричные байты идентификатора, а не текст запроса.
     const value = `CAST(X'${Buffer.from(id, 'utf8').toString('hex')}' AS TEXT)`;
     const statements = ['gallery', 'tags', 'working_hours', 'reviews', 'contact_info', 'stories'].map(table => `DELETE FROM ${table} WHERE post_id = ${value};`);
+    statements.push(`DELETE FROM map_places WHERE post_id = ${value};`);
     // Связь владельца сохраняется для подсчёта прежних событий компании за период статистики.
     statements.push(`DELETE FROM posts WHERE id = ${value};`);
     try {

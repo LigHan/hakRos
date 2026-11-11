@@ -98,7 +98,7 @@ test('live request includes catalog and reports availability', async () => {
   const result = await service.reply('Куда сходить?', []);
   assert.equal(result.catalogAvailable, true);
   assert.match(requests[0].messages[0].content, /Музей/);
-  assert.match(requests[0].messages[0].content, /нет проверенных цен/);
+  assert.match(requests[0].messages[0].content, /не переданы проверенные цены/);
 });
 
 test('unconfigured or failed live provider returns a safe error, never a fake success', async () => {

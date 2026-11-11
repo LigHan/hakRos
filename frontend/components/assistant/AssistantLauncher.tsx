@@ -273,7 +273,7 @@ export function AssistantLauncher() {
 
               <ScrollView ref={listRef} contentContainerStyle={styles.messages} onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled">
                 {catalogAvailable === false && <Text style={styles.notice}>Каталог мест сейчас недоступен, поэтому помощник не сможет предложить конкретные места.</Text>}
-                {catalogAvailable === true && <Text style={styles.notice}>Стоимость, время работы и длительность посещения нужно уточнить: в каталоге этих данных нет.</Text>}
+                {catalogAvailable === true && <Text style={styles.notice}>Помощник пока не проверяет стоимость, время работы и длительность посещения — уточните их перед визитом.</Text>}
                 {messages.map((item, index) => (
                   <View key={`${item.role}-${index}`} style={[styles.bubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
                     <Text style={[styles.bubbleText, item.role === 'user' && styles.userText]}>{item.content}</Text>

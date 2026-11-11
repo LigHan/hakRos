@@ -1,7 +1,8 @@
+import { useAppStyles } from '@/lib/app-appearance';
 import { authorized, track } from '@/lib/statistics';
 import { getUserSession } from '@/lib/user-session';
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
@@ -35,6 +36,7 @@ export default function PlaceDetailsRoute() {
 }
 
 function PlaceDetails({ id }: { id?: string }) {
+  const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
@@ -232,7 +234,7 @@ function PlaceDetails({ id }: { id?: string }) {
   if (loading) {
     return (
       <ThemedView style={styles.loadingContainer}>
-        <Ionicons name="business-outline" size={48} color="#007AFF" />
+        <Ionicons name="business-outline" size={48} color="#606C38" />
         <Text style={styles.loadingText}>Загрузка информации о месте...</Text>
       </ThemedView>
     );
@@ -263,14 +265,6 @@ function PlaceDetails({ id }: { id?: string }) {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: post.place,
-          headerTransparent: true,
-          headerTintColor: '#0f172a',
-        }}
-      />
-
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Основное изображение */}
         <TouchableOpacity
@@ -299,7 +293,7 @@ function PlaceDetails({ id }: { id?: string }) {
                 {post.place}
               </ThemedText>
               <View style={styles.ratingBadge}>
-                <Ionicons name="star" size={18} color="#FFB800" />
+                <Ionicons name="star" size={18} color="#BC6C25" />
                 <Text style={styles.ratingText}>{post.rating.toFixed(1)}</Text>
               </View>
             </View>
@@ -316,7 +310,7 @@ function PlaceDetails({ id }: { id?: string }) {
             <Text style={styles.bio}>{post.bio}</Text>
 
             <TouchableOpacity style={styles.addressRow} onPress={openInMap}>
-              <Ionicons name="location-outline" size={18} color="#2563eb" />
+              <Ionicons name="location-outline" size={18} color="#606C38" />
               <Text style={styles.addressText}>{post.address}</Text>
             </TouchableOpacity>
           </View>
@@ -342,40 +336,43 @@ function PlaceDetails({ id }: { id?: string }) {
               <Ionicons
                 name={isLiked ? "heart" : "heart-outline"}
                 size={24}
-                color={isLiked ? "#FF2D55" : "#1C1C1E"}
+                color={isLiked ? "#BC6C25" : "#283618"}
               />
               <Text style={[
                 styles.actionText,
-                { color: isLiked ? "#FF2D55" : "#1C1C1E" }
+                { color: isLiked ? "#BC6C25" : "#283618" }
               ]}>
                 {formatCompactNumber(post.likes)}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionButton} onPress={buildRoute}>
-              <Ionicons name="navigate-outline" size={24} color="#1C1C1E" />
+              <Ionicons name="navigate-outline" size={24} color="#283618" />
               <Text style={styles.actionText}>Маршрут</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionButton} onPress={sharePlace}>
-              <Ionicons name="share-outline" size={24} color="#1C1C1E" />
+              <Ionicons name="share-outline" size={24} color="#283618" />
               <Text style={styles.actionText}>Поделиться</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionButton} onPress={openInMap}>
-              <Ionicons name="map-outline" size={24} color="#1C1C1E" />
+              <Ionicons name="map-outline" size={24} color="#283618" />
               <Text style={styles.actionText}>На карте</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.actionButton, styles.favoriteButton]}
               onPress={handleFavorite}
+              accessibilityRole="button"
+              accessibilityLabel={isFavorite ? 'Убрать из избранного' : 'Сохранить в избранное'}
             >
               <Ionicons
                 name={isFavorite ? "bookmark" : "bookmark-outline"}
                 size={24}
-                color={isFavorite ? "#007AFF" : "#1C1C1E"}
+                color={isFavorite ? "#606C38" : "#283618"}
               />
+              <Text style={styles.actionText}>{isFavorite ? 'Сохранено' : 'Сохранить'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -428,7 +425,7 @@ function PlaceDetails({ id }: { id?: string }) {
               <View style={styles.contactsList}>
                 {contactInfo.map((contact, index) => (
                   <TouchableOpacity key={index} style={styles.contactRow}>
-                    <Ionicons name={contact.icon} size={18} color="#2563eb" />
+                    <Ionicons name={contact.icon} size={18} color="#606C38" />
                     <Text style={styles.contactText}>{contact.value}</Text>
                   </TouchableOpacity>
                 ))}
@@ -448,7 +445,7 @@ function PlaceDetails({ id }: { id?: string }) {
                     <View style={styles.reviewHeader}>
                       <Text style={styles.reviewAuthor}>{review.author}</Text>
                       <View style={styles.reviewRating}>
-                        <Ionicons name="star" size={14} color="#FFB800" />
+                        <Ionicons name="star" size={14} color="#BC6C25" />
                         <Text style={styles.reviewRatingText}>{review.rating.toFixed(1)}</Text>
                       </View>
                     </View>
@@ -468,7 +465,7 @@ function PlaceDetails({ id }: { id?: string }) {
         <Pressable style={styles.modalOverlay} onPress={handleCloseAuth}>
           <Pressable style={styles.authModalCard} onPress={event => event.stopPropagation()}>
             <View style={styles.authModalIcon}>
-              <Ionicons name="lock-closed" size={32} color="#007AFF" />
+              <Ionicons name="lock-closed" size={32} color="#606C38" />
             </View>
             <Text style={styles.authModalTitle}>Требуется авторизация</Text>
             <Text style={styles.authModalText}>
@@ -535,7 +532,7 @@ function PlaceDetails({ id }: { id?: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
@@ -550,7 +547,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     textAlign: 'center',
   },
   errorContainer: {
@@ -566,7 +563,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   retryButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#606C38',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 12,
@@ -632,7 +629,7 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#B45309',
+    color: '#BC6C25',
   },
   authorRow: {
     flexDirection: 'row',
@@ -650,11 +647,11 @@ const styles = StyleSheet.create({
   authorName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   authorHandle: {
     fontSize: 14,
-    color: '#64748b',
+    color: '#6F7457',
   },
   bio: {
     fontSize: 16,
@@ -669,7 +666,7 @@ const styles = StyleSheet.create({
   addressText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#606C38',
     textDecorationLine: 'underline',
   },
   tagsSection: {
@@ -688,12 +685,15 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#283618',
   },
   actions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    columnGap: '3.5%',
+    rowGap: 14,
     paddingVertical: 16,
     borderTopWidth: 1,
     borderBottomWidth: 1,
@@ -701,14 +701,17 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '31%',
+    minHeight: 62,
     gap: 6,
   },
-  favoriteButton: {
-    marginLeft: 'auto',
-  },
+  favoriteButton: {},
   actionText: {
     fontSize: 14,
+    lineHeight: 19,
     fontWeight: '600',
+    textAlign: 'center',
   },
   gallerySection: {
     gap: 12,
@@ -718,7 +721,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    color: '#0f172a',
+    color: '#283618',
   },
   gallery: {
     flexDirection: 'row',
@@ -752,7 +755,7 @@ const styles = StyleSheet.create({
   hoursValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   contactsList: {
     gap: 12,
@@ -765,7 +768,7 @@ const styles = StyleSheet.create({
   },
   contactText: {
     fontSize: 15,
-    color: '#2563eb',
+    color: '#606C38',
     fontWeight: '500',
   },
   reviewsList: {
@@ -785,7 +788,7 @@ const styles = StyleSheet.create({
   reviewAuthor: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   reviewRating: {
     flexDirection: 'row',
@@ -795,7 +798,7 @@ const styles = StyleSheet.create({
   reviewRatingText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#B45309',
+    color: '#BC6C25',
   },
   reviewComment: {
     fontSize: 15,
@@ -804,7 +807,7 @@ const styles = StyleSheet.create({
   },
   reviewDate: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: '#6F7457',
   },
   // Стили для модального окна авторизации
   modalOverlay: {
@@ -839,13 +842,13 @@ const styles = StyleSheet.create({
   authModalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0f172a',
+    color: '#283618',
     textAlign: 'center',
     marginBottom: 12,
   },
   authModalText: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
@@ -866,14 +869,14 @@ const styles = StyleSheet.create({
   authModalButtonSecondaryText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#64748b',
+    color: '#6F7457',
   },
   authModalButtonPrimary: {
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#606C38',
     alignItems: 'center',
   },
   authModalButtonPrimaryText: {

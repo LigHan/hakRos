@@ -1,3 +1,4 @@
+import { useAppStyles } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -17,6 +18,7 @@ function failureState(error: unknown): State {
 }
 
 export function PlaceSubscriptionButton({ placeId }: { placeId: string }) {
+  const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const [state, setState] = useState<State>('loading');
   const [saving, setSaving] = useState(false);
@@ -85,7 +87,7 @@ export function PlaceSubscriptionButton({ placeId }: { placeId: string }) {
         onPress={() => void onPress()}
         style={[styles.button, subscribed && styles.selected, saving && styles.disabled]}
       >
-        <Ionicons name={subscribed ? 'checkmark' : 'add'} size={18} color={subscribed ? '#1d4ed8' : '#fff'} />
+        <Ionicons name={subscribed ? 'checkmark' : 'add'} size={18} color={subscribed ? '#283618' : '#fff'} />
         <Text style={[styles.label, subscribed && styles.selectedLabel]}>
           {saving ? 'Сохраняем…' : labels[state]}
         </Text>
@@ -95,7 +97,7 @@ export function PlaceSubscriptionButton({ placeId }: { placeId: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: { alignSelf: 'flex-start', gap: 6, marginTop: 12 },
   button: {
     flexDirection: 'row',
@@ -105,11 +107,11 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#2563eb',
+    backgroundColor: '#606C38',
   },
-  selected: { backgroundColor: '#dbeafe' },
+  selected: { backgroundColor: '#F0ECCD' },
   disabled: { opacity: 0.65 },
   label: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  selectedLabel: { color: '#1d4ed8' },
+  selectedLabel: { color: '#283618' },
   error: { color: '#b42318', fontSize: 13 },
 });

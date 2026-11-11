@@ -1,3 +1,5 @@
+import { SketchFrame } from '@/components/sketch-frame';
+import { useAppStyles } from '@/lib/app-appearance';
 import { track } from '@/lib/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -34,6 +36,7 @@ import { matchesPlaceCategory, placeCategories } from '@/lib/place-categories';
 type SearchPost = Post;
 
 export default function SearchScreen() {
+  const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const searchInputRef = useRef<TextInputInstance>(null);
   const [fadeAnim] = useState(() => new Animated.Value(0));
@@ -275,7 +278,7 @@ export default function SearchScreen() {
         <View style={styles.placeRow}>
           <Text style={styles.place}>{item.place}</Text>
           <View style={styles.ratingBadge}>
-            <Ionicons name="star" size={16} color="#FFB800" />
+            <Ionicons name="star" size={16} color="#BC6C25" />
             <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
           </View>
         </View>
@@ -285,7 +288,7 @@ export default function SearchScreen() {
           activeOpacity={0.85}
           onPress={() => openInMap(item)}
         >
-          <Ionicons name="location-outline" size={16} color="#2563eb" />
+          <Ionicons name="location-outline" size={16} color="#606C38" />
           <Text style={styles.addressText}>{item.address}</Text>
         </TouchableOpacity>
         <View style={styles.tagRow}>
@@ -306,11 +309,11 @@ export default function SearchScreen() {
             <Ionicons
               name={postLikes[item.id] ? "heart" : "heart-outline"}
               size={24}
-              color={postLikes[item.id] ? "#FF2D55" : "#1C1C1E"}
+              color={postLikes[item.id] ? "#BC6C25" : "#283618"}
             />
             <Text style={[
               styles.likeCount,
-              { color: postLikes[item.id] ? "#FF2D55" : "#333" }
+              { color: postLikes[item.id] ? "#BC6C25" : "#333" }
             ]}>
               {formatCompactNumber(item.likes)}
             </Text>
@@ -320,14 +323,14 @@ export default function SearchScreen() {
             style={styles.actionButton}
             activeOpacity={0.85}
           >
-            <Ionicons name="navigate-outline" size={24} color="#1C1C1E" />
+            <Ionicons name="navigate-outline" size={24} color="#283618" />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleDownload(item.id)}
             style={styles.actionButton}
             activeOpacity={0.85}
           >
-            <Ionicons name="download-outline" size={24} color="#1C1C1E" />
+            <Ionicons name="download-outline" size={24} color="#283618" />
           </TouchableOpacity>
         </View>
         <TouchableOpacity
@@ -338,17 +341,18 @@ export default function SearchScreen() {
           <Ionicons
             name={postFavorites[item.id] ? "bookmark" : "bookmark-outline"}
             size={24}
-            color={postFavorites[item.id] ? "#007AFF" : "#1C1C1E"}
+            color={postFavorites[item.id] ? "#606C38" : "#283618"}
           />
         </TouchableOpacity>
       </View>
+      <SketchFrame />
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
       <ThemedView style={styles.loadingContainer}>
-        <Ionicons name="search-outline" size={48} color="#007AFF" />
+        <Ionicons name="search-outline" size={48} color="#606C38" />
         <Text style={styles.loadingText}>Загрузка данных для поиска...</Text>
       </ThemedView>
     );
@@ -357,13 +361,15 @@ export default function SearchScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.searchHeader}>
+        <Text style={styles.pageTitle}>Поиск</Text>
+        <Text style={styles.pageSubtitle}>Найдите место для новых впечатлений</Text>
         <View style={[styles.searchContainer, searchActive && styles.searchContainerActive]}>
           <Ionicons name="search" size={20} color="#475569" style={styles.searchIcon} />
           <TextInput
             ref={searchInputRef}
             style={styles.searchInput}
             placeholder="Поиск мест, событий, авторов..."
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor="#6F7457"
             value={searchQuery}
             onChangeText={handleSearchChange}
             onFocus={() => setSearchActive(true)}
@@ -373,7 +379,7 @@ export default function SearchScreen() {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={clearSearch} style={styles.clearButton} hitSlop={8}>
-              <Ionicons name="close-circle" size={20} color="#94a3b8" />
+              <Ionicons name="close-circle" size={20} color="#6F7457" />
             </TouchableOpacity>
           )}
         </View>
@@ -393,7 +399,7 @@ export default function SearchScreen() {
               <Ionicons
                 name={item.icon}
                 size={16}
-                color={selectedCategory === item.id ? '#fff' : '#2563eb'}
+                color={selectedCategory === item.id ? '#fff' : '#606C38'}
               />
               <Text style={selectedCategory === item.id ? styles.categoryChipTextActive : styles.categoryChipText}>
                 {item.name}
@@ -429,26 +435,12 @@ export default function SearchScreen() {
         />
       </Animated.View>
 
-      <View pointerEvents="none" style={styles.placeholderWrapper}>
-        {!isSearching && searchResults.length === postsData.length && postsData.length > 0 && (
-          <View style={styles.placeholderContainer}>
-            <Ionicons name="search" size={48} color="#c6c6c8" />
-            <ThemedText type="defaultSemiBold" style={styles.placeholderTitle}>
-              Найдите интересные места
-            </ThemedText>
-            <ThemedText style={styles.placeholderText}>
-              Ищите рестораны, парки, музеи и другие места вокруг вас
-            </ThemedText>
-          </View>
-        )}
-      </View>
-
       {/* Модальное окно авторизации */}
       <Modal visible={isAuthModalVisible} transparent animationType="fade" onRequestClose={handleCloseAuth}>
         <Pressable style={styles.modalOverlay} onPress={handleCloseAuth}>
           <Pressable style={styles.authModalCard} onPress={event => event.stopPropagation()}>
             <View style={styles.authModalIcon}>
-              <Ionicons name="lock-closed" size={32} color="#007AFF" />
+              <Ionicons name="lock-closed" size={32} color="#606C38" />
             </View>
             <Text style={styles.authModalTitle}>Требуется авторизация</Text>
             <Text style={styles.authModalText}>
@@ -486,7 +478,7 @@ export default function SearchScreen() {
                 <View style={styles.detailHeader}>
                   <Text style={styles.detailTitle}>{activePost.place}</Text>
                   <View style={styles.detailRating}>
-                    <Ionicons name="star" size={18} color="#FFB800" />
+                    <Ionicons name="star" size={18} color="#BC6C25" />
                     <Text style={styles.detailRatingText}>{activePost.rating.toFixed(1)}</Text>
                   </View>
                 </View>
@@ -499,7 +491,7 @@ export default function SearchScreen() {
                     openInMap(activePost);
                   }}
                 >
-                  <Ionicons name="location-outline" size={18} color="#2563eb" />
+                  <Ionicons name="location-outline" size={18} color="#606C38" />
                   <Text style={styles.detailAddressText}>{activePost.address}</Text>
                 </TouchableOpacity>
                 <View style={styles.detailTags}>
@@ -523,7 +515,7 @@ export default function SearchScreen() {
                       triggerMapSearch(activePost.address);
                     }}
                   >
-                    <Ionicons name="map-outline" size={18} color="#1e293b" />
+                    <Ionicons name="map-outline" size={18} color="#283618" />
                     <Text style={styles.detailMetaText}>На карте</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -535,14 +527,14 @@ export default function SearchScreen() {
                       buildRoute(activePost);
                     }}
                   >
-                    <Ionicons name="navigate-outline" size={18} color="#1e293b" />
+                    <Ionicons name="navigate-outline" size={18} color="#283618" />
                     <Text style={styles.detailMetaText}>Маршрут</Text>
                   </TouchableOpacity>
                   <View style={styles.detailMeta}>
                     <Ionicons
                       name={postLikes[activePost.id] ? "heart" : "heart-outline"}
                       size={18}
-                      color={postLikes[activePost.id] ? "#FF2D55" : "#FF2D55"}
+                      color={postLikes[activePost.id] ? "#BC6C25" : "#BC6C25"}
                     />
                     <Text style={styles.detailMetaText}>{`${formatCompactNumber(activePost.likes)} отметок`}</Text>
                   </View>
@@ -568,7 +560,7 @@ export default function SearchScreen() {
                   <Ionicons
                     name={postFavorites[activePost.id] ? "bookmark" : "bookmark-outline"}
                     size={22}
-                    color={postFavorites[activePost.id] ? "#007AFF" : "#64748b"}
+                    color={postFavorites[activePost.id] ? "#606C38" : "#6F7457"}
                   />
                 </TouchableOpacity>
               </View>
@@ -580,7 +572,9 @@ export default function SearchScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
+  pageTitle: { color: '#283618', fontSize: 30, lineHeight: 38, fontWeight: '800' },
+  pageSubtitle: { color: '#6F7457', fontSize: 14, marginTop: -12 },
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
@@ -595,7 +589,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     textAlign: 'center',
   },
   searchHeader: {
@@ -630,7 +624,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     height: '100%',
-    color: '#0f172a',
+    color: '#283618',
   },
   clearButton: {
     padding: 4,
@@ -648,12 +642,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   categoryChipActive: {
-    backgroundColor: '#2563eb',
+    backgroundColor: '#606C38',
   },
   categoryChipText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#606C38',
   },
   categoryChipTextActive: {
     fontSize: 13,
@@ -674,7 +668,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(15,23,42,0.15)',
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.12,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 16 },
@@ -704,11 +698,11 @@ const styles = StyleSheet.create({
   authorName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   authorHandle: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#6F7457',
     marginTop: 2,
   },
   placeRow: {
@@ -720,7 +714,7 @@ const styles = StyleSheet.create({
   place: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   ratingBadge: {
     flexDirection: 'row',
@@ -734,7 +728,7 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#B45309',
+    color: '#BC6C25',
   },
   userCaption: {
     color: '#777',
@@ -749,7 +743,7 @@ const styles = StyleSheet.create({
   addressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#606C38',
     textDecorationLine: 'underline',
   },
   tagRow: {
@@ -767,7 +761,7 @@ const styles = StyleSheet.create({
   tagText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#283618',
   },
   actions: {
     flexDirection: 'row',
@@ -832,7 +826,7 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.9)',
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.1,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 12 },
@@ -863,7 +857,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     overflow: 'hidden',
     backgroundColor: '#f8fafc',
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.24,
     shadowRadius: 28,
     shadowOffset: { width: 0, height: 18 },
@@ -887,7 +881,7 @@ const styles = StyleSheet.create({
   detailTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#0f172a',
+    color: '#283618',
     flex: 1,
   },
   detailRating: {
@@ -907,7 +901,7 @@ const styles = StyleSheet.create({
   detailSubtitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1e293b',
+    color: '#283618',
   },
   detailAddressRow: {
     flexDirection: 'row',
@@ -921,7 +915,7 @@ const styles = StyleSheet.create({
   detailAddressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#283618',
   },
   detailTags: {
     flexDirection: 'row',
@@ -937,7 +931,7 @@ const styles = StyleSheet.create({
   detailTagText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#283618',
   },
   detailDescription: {
     fontSize: 15,
@@ -965,7 +959,7 @@ const styles = StyleSheet.create({
   detailMetaText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#1e293b',
+    color: '#283618',
   },
   detailUserBar: {
     flexDirection: 'row',
@@ -991,7 +985,7 @@ const styles = StyleSheet.create({
   detailUserName: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0f172a',
+    color: '#283618',
   },
   detailUserCaption: {
     fontSize: 13,
@@ -1041,13 +1035,13 @@ const styles = StyleSheet.create({
   authModalTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0f172a',
+    color: '#283618',
     textAlign: 'center',
     marginBottom: 12,
   },
   authModalText: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
@@ -1068,14 +1062,14 @@ const styles = StyleSheet.create({
   authModalButtonSecondaryText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#64748b',
+    color: '#6F7457',
   },
   authModalButtonPrimary: {
     flex: 1,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#606C38',
     alignItems: 'center',
   },
   authModalButtonPrimaryText: {

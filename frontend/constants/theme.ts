@@ -5,27 +5,17 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
-export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-  },
+const appColors = {
+  text: '#283618',
+  background: '#FEFAE0',
+  tint: '#606C38',
+  icon: '#6F7457',
+  tabIconDefault: '#6F7457',
+  tabIconSelected: '#606C38',
 };
+
+// The selected appearance uses the same readable palette in both system modes.
+export const Colors = { light: appColors, dark: appColors };
 
 export const Fonts = Platform.select({
   ios: {

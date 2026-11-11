@@ -1,3 +1,4 @@
+import { useAppStyles } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -28,6 +29,7 @@ const metricLabels: { key: Metric; label: string; icon: keyof typeof Ionicons.gl
 
 // Веб-панель использует серверные права; на Android администратор остаётся в обычном интерфейсе.
 export default function AdminPage() {
+  const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const { width } = useWindowDimensions();
   const compact = width < 760;
@@ -104,7 +106,7 @@ export default function AdminPage() {
   return (
     <View style={[styles.layout, compact && styles.layoutCompact]}>
       <View style={[styles.sidebar, compact && styles.sidebarCompact]}>
-        <View style={styles.brand}><View style={styles.brandMark}><Ionicons name="compass" size={20} color="#d7e6ff" /></View><View><Text style={styles.brandTitle}>hakRos</Text><Text style={styles.brandCaption}>ПАНЕЛЬ УПРАВЛЕНИЯ</Text></View></View>
+        <View style={styles.brand}><View style={styles.brandMark}><Ionicons name="compass" size={20} color="#FEFAE0" /></View><View><Text style={styles.brandTitle}>hakRos</Text><Text style={styles.brandCaption}>ПАНЕЛЬ УПРАВЛЕНИЯ</Text></View></View>
         <Text style={styles.navCaption}>РАБОЧЕЕ ПРОСТРАНСТВО</Text>
         <View style={[styles.nav, compact && styles.navCompact]}>
           <NavItem icon="grid-outline" label="Обзор" active={section === 'overview'} onPress={() => select('overview')} />
@@ -112,24 +114,24 @@ export default function AdminPage() {
           <NavItem icon="people-outline" label="Пользователи" active={section === 'users'} onPress={() => select('users')} />
         </View>
         <View style={styles.sidebarBottom}>
-          <Pressable accessibilityRole="button" onPress={() => router.replace('/')} style={styles.navItem}><Ionicons name="open-outline" size={19} color="#a6b4c9" /><Text style={styles.navText}>Перейти на сайт</Text></Pressable>
-          <Pressable accessibilityRole="button" onPress={() => void logout()} style={styles.navItem}><Ionicons name="log-out-outline" size={19} color="#a6b4c9" /><Text style={styles.navText}>Выйти из аккаунта</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.replace('/')} style={styles.navItem}><Ionicons name="open-outline" size={19} color="#6F7457" /><Text style={styles.navText}>Перейти на сайт</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => void logout()} style={styles.navItem}><Ionicons name="log-out-outline" size={19} color="#6F7457" /><Text style={styles.navText}>Выйти из аккаунта</Text></Pressable>
         </View>
       </View>
       <ScrollView style={styles.content} contentContainerStyle={[styles.contentInner, compact && styles.contentCompact]} keyboardShouldPersistTaps="handled">
         <View style={styles.topline}><Text style={styles.breadcrumb}>HAKROS  /  УПРАВЛЕНИЕ</Text>{stats?.role === 'admin' && <View style={styles.adminBadge}><View style={styles.statusDot} /><Text style={styles.adminBadgeText}>Администратор</Text></View>}</View>
         <View style={styles.titleRow}><View><Text style={styles.title}>{title}</Text><Text style={styles.subtitle}>{section === 'overview' ? 'Активность сервиса и основные показатели' : section === 'places' ? 'Просмотр и редактирование данных мест' : 'Аккаунты пользователей и компаний'}</Text></View><Text style={styles.period}>ЛОКАЛЬНОЕ ДЕМО</Text></View>
-        {loading ? <ActivityIndicator color="#8bafff" style={styles.loader} /> : null}
+        {loading ? <ActivityIndicator color="#DDA15E" style={styles.loader} /> : null}
         {error ? <View style={styles.errorBox}><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{needsLogin ? <Action label="Войти в аккаунт" onPress={() => router.replace('/login')} /> : <Action label="Повторить" onPress={() => void load()} />}</View> : null}
         {notice ? <Text accessibilityRole="alert" style={styles.success}>{notice}</Text> : null}
         {!loading && stats && section === 'overview' && <>
           <View style={styles.sectionHeading}><View><Text style={styles.heading}>Статистика сервиса</Text><Text style={styles.muted}>Активность за последние 30 дней</Text></View><Action label="Обновить" onPress={() => void load()} /></View>
-          <View style={styles.metricGrid}>{metricLabels.map(metric => <View key={metric.key} style={styles.metricCard}><View style={styles.metricIcon}><Ionicons name={metric.icon} size={19} color="#a4bdff" /></View><Text style={styles.metricValue}>{stats.counts[metric.key] ?? 0}</Text><Text style={styles.muted}>{metric.label}</Text></View>)}</View>
+          <View style={styles.metricGrid}>{metricLabels.map(metric => <View key={metric.key} style={styles.metricCard}><View style={styles.metricIcon}><Ionicons name={metric.icon} size={19} color="#DDA15E" /></View><Text style={styles.metricValue}>{stats.counts[metric.key] ?? 0}</Text><Text style={styles.muted}>{metric.label}</Text></View>)}</View>
           <View style={styles.panel}><View style={styles.sectionHeading}><View><Text style={styles.heading}>Категории мест</Text><Text style={styles.muted}>Распределение просмотров карточек</Text></View></View>{stats.categories.length ? stats.categories.map(category => <View key={category.category} style={styles.categoryRow}><Text style={styles.bodyText}>{category.category}</Text><Text style={styles.bodyText}>{category.n}</Text></View>) : <Text style={styles.muted}>Просмотров пока нет.</Text>}</View>
           <Text style={styles.note}>Показано количество действий, а не уникальных людей. Поиски без результатов входят в общее число поисков.</Text>
         </>}
         {!loading && section !== 'overview' && <View style={styles.panel}>
-          <View style={styles.tableTop}><View><Text style={styles.heading}>{title}</Text><Text style={styles.muted}>Всего записей: {section === 'places' ? places.length : users.length}</Text></View><TextInput accessibilityLabel="Поиск" placeholder="Поиск..." placeholderTextColor="#748197" value={query} onChangeText={setQuery} style={styles.search} /></View>
+          <View style={styles.tableTop}><View><Text style={styles.heading}>{title}</Text><Text style={styles.muted}>Всего записей: {section === 'places' ? places.length : users.length}</Text></View><TextInput accessibilityLabel="Поиск" placeholder="Поиск..." placeholderTextColor="#6F7457" value={query} onChangeText={setQuery} style={styles.search} /></View>
           {section === 'places' && filteredPlaces.map(item => <View key={item.id} style={styles.row}>
             {placeId === item.id ? <View style={styles.form}>
               <Field label="Название" value={placeForm.place} onChange={value => setPlaceForm({ ...placeForm, place: value })} />
@@ -155,25 +157,28 @@ export default function AdminPage() {
 }
 
 function NavItem({ icon, label, active, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; active: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={[styles.navItem, active && styles.navItemActive]}><Ionicons name={icon} size={19} color={active ? '#a9c4ff' : '#8290a6'} /><Text style={[styles.navText, active && styles.navTextActive]}>{label}</Text></Pressable>;
+  const styles = useAppStyles(baseStyles);
+  return <Pressable accessibilityRole="button" accessibilityState={{ selected: active }} onPress={onPress} style={[styles.navItem, active && styles.navItemActive]}><Ionicons name={icon} size={19} color={active ? '#FEFAE0' : '#6F7457'} /><Text style={[styles.navText, active && styles.navTextActive]}>{label}</Text></Pressable>;
 }
 function Field({ label, value, onChange, multiline = false }: { label: string; value: string; onChange: (value: string) => void; multiline?: boolean }) {
+  const styles = useAppStyles(baseStyles);
   return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChange} multiline={multiline} autoCapitalize={label === 'Email' ? 'none' : 'sentences'} style={[styles.input, multiline && styles.multiline]} /></View>;
 }
 function Action({ label, onPress, active = false, disabled = false }: { label: string; onPress: () => void; active?: boolean; disabled?: boolean }) {
+  const styles = useAppStyles(baseStyles);
   return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.action, active && styles.actionActive, disabled && styles.disabled]}><Text style={[styles.actionText, active && styles.actionTextActive]}>{label}</Text></Pressable>;
 }
 
-const styles = StyleSheet.create({
-  layout: { flex: 1, minHeight: '100%', flexDirection: 'row', backgroundColor: '#0c1017' }, layoutCompact: { flexDirection: 'column' },
-  sidebar: { width: 238, backgroundColor: '#101721', borderRightWidth: 1, borderColor: '#263140', paddingHorizontal: 18, paddingVertical: 24 }, sidebarCompact: { width: '100%', paddingVertical: 14 },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 44 }, brandMark: { width: 37, height: 37, borderRadius: 11, backgroundColor: '#294b83', alignItems: 'center', justifyContent: 'center' }, brandTitle: { color: '#f1f5fa', fontSize: 19, fontWeight: '700' }, brandCaption: { color: '#728098', fontSize: 9, letterSpacing: 1 },
-  navCaption: { color: '#627087', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 12, marginLeft: 11 }, nav: { gap: 5 }, navCompact: { flexDirection: 'row', flexWrap: 'wrap' }, navItem: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 11 }, navItemActive: { backgroundColor: '#223450' }, navText: { color: '#a6b4c9', fontSize: 14 }, navTextActive: { color: '#d9e6ff', fontWeight: '600' }, sidebarBottom: { marginTop: 'auto', paddingTop: 28, gap: 4 },
+const baseStyles = StyleSheet.create({
+  layout: { flex: 1, minHeight: '100%', flexDirection: 'row', backgroundColor: '#FEFAE0' }, layoutCompact: { flexDirection: 'column' },
+  sidebar: { width: 238, backgroundColor: '#FFFCED', borderRightWidth: 1, borderColor: '#D9D6B5', paddingHorizontal: 18, paddingVertical: 24 }, sidebarCompact: { width: '100%', paddingVertical: 14 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 11, marginBottom: 44 }, brandMark: { width: 37, height: 37, borderRadius: 11, backgroundColor: '#606C38', alignItems: 'center', justifyContent: 'center' }, brandTitle: { color: '#283618', fontSize: 19, fontWeight: '700' }, brandCaption: { color: '#6F7457', fontSize: 9, letterSpacing: 1 },
+  navCaption: { color: '#6F7457', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 12, marginLeft: 11 }, nav: { gap: 5 }, navCompact: { flexDirection: 'row', flexWrap: 'wrap' }, navItem: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 11 }, navItemActive: { backgroundColor: '#606C38' }, navText: { color: '#6F7457', fontSize: 14 }, navTextActive: { color: '#FEFAE0', fontWeight: '600' }, sidebarBottom: { marginTop: 'auto', paddingTop: 28, gap: 4 },
   content: { flex: 1 }, contentInner: { paddingVertical: 30, paddingHorizontal: 42, paddingBottom: 70, maxWidth: 1550, width: '100%', alignSelf: 'center' }, contentCompact: { padding: 20, paddingBottom: 50 },
-  topline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 42 }, breadcrumb: { color: '#78869b', fontSize: 10, fontWeight: '700', letterSpacing: 1.2 }, adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 7 }, adminBadgeText: { color: '#cbd5e3', fontSize: 12 }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#6bd69d' },
-  titleRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 36 }, title: { fontSize: 30, fontWeight: '700', color: '#f2f5fa' }, subtitle: { color: '#8997aa', marginTop: 6, fontSize: 14 }, period: { color: '#8fa0b7', fontSize: 10, fontWeight: '700', letterSpacing: 1, borderWidth: 1, borderColor: '#303c4d', borderRadius: 8, padding: 10 },
-  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 16 }, heading: { color: '#eef3f9', fontSize: 17, fontWeight: '700', marginBottom: 5 }, muted: { color: '#8795a9', fontSize: 13, lineHeight: 20 }, metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 22 }, metricCard: { backgroundColor: '#151e2a', borderWidth: 1, borderColor: '#283342', borderRadius: 12, padding: 18, minWidth: 190, flexGrow: 1, flexBasis: 190, gap: 8 }, metricIcon: { width: 36, height: 36, backgroundColor: '#253550', borderRadius: 9, alignItems: 'center', justifyContent: 'center', marginBottom: 7 }, metricValue: { color: '#f5f7fa', fontWeight: '700', fontSize: 28 },
-  panel: { backgroundColor: '#141d28', borderWidth: 1, borderColor: '#283342', borderRadius: 12, padding: 20 }, categoryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderColor: '#283342' }, note: { color: '#78869b', fontSize: 12, lineHeight: 20, marginTop: 16 },
-  tableTop: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 20 }, search: { minWidth: 230, color: '#e9eff7', borderWidth: 1, borderColor: '#344356', backgroundColor: '#101822', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8 }, row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 16, borderTopWidth: 1, borderColor: '#283342', paddingVertical: 16 }, rowMain: { flex: 1, minWidth: 180, gap: 4 }, bodyText: { color: '#e9eef5', fontSize: 14, fontWeight: '600' }, role: { color: '#9ebaf0', backgroundColor: '#213149', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, fontSize: 12 }, empty: { color: '#8795a9', paddingVertical: 18 },
-  action: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: '#344356', backgroundColor: '#1a2634' }, actionActive: { backgroundColor: '#4668aa', borderColor: '#4668aa' }, actionText: { color: '#c5d1df', fontSize: 12, fontWeight: '600' }, actionTextActive: { color: '#fff' }, disabled: { opacity: 0.55 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, form: { width: '100%', gap: 12 }, field: { gap: 6 }, label: { color: '#c5d1df', fontSize: 13, fontWeight: '600' }, input: { color: '#e9eff7', borderWidth: 1, borderColor: '#344356', backgroundColor: '#101822', padding: 10, borderRadius: 8 }, multiline: { minHeight: 80, textAlignVertical: 'top' }, loader: { marginVertical: 30 }, errorBox: { gap: 10, alignItems: 'flex-start', marginBottom: 16 }, error: { color: '#ff9a9a' }, success: { color: '#83dba9', marginBottom: 16 },
+  topline: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 42 }, breadcrumb: { color: '#6F7457', fontSize: 10, fontWeight: '700', letterSpacing: 1.2 }, adminBadge: { flexDirection: 'row', alignItems: 'center', gap: 7 }, adminBadgeText: { color: '#283618', fontSize: 12 }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#DDA15E' },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 36 }, title: { fontSize: 30, fontWeight: '700', color: '#283618' }, subtitle: { color: '#6F7457', marginTop: 6, fontSize: 14 }, period: { color: '#6F7457', fontSize: 10, fontWeight: '700', letterSpacing: 1, borderWidth: 1, borderColor: '#606C38', borderRadius: 8, padding: 10 },
+  sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 16 }, heading: { color: '#283618', fontSize: 17, fontWeight: '700', marginBottom: 5 }, muted: { color: '#6F7457', fontSize: 13, lineHeight: 20 }, metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginBottom: 22 }, metricCard: { backgroundColor: '#FFFCED', borderWidth: 1, borderColor: '#D9D6B5', borderRadius: 12, padding: 18, minWidth: 190, flexGrow: 1, flexBasis: 190, gap: 8 }, metricIcon: { width: 36, height: 36, backgroundColor: '#F0ECCD', borderRadius: 9, alignItems: 'center', justifyContent: 'center', marginBottom: 7 }, metricValue: { color: '#283618', fontWeight: '700', fontSize: 28 },
+  panel: { backgroundColor: '#FFFCED', borderWidth: 1, borderColor: '#D9D6B5', borderRadius: 12, padding: 20 }, categoryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderColor: '#D9D6B5' }, note: { color: '#6F7457', fontSize: 12, lineHeight: 20, marginTop: 16 },
+  tableTop: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 14, marginBottom: 20 }, search: { minWidth: 230, color: '#283618', borderWidth: 1, borderColor: '#D9D6B5', backgroundColor: '#FFFCED', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8 }, row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 16, borderTopWidth: 1, borderColor: '#D9D6B5', paddingVertical: 16 }, rowMain: { flex: 1, minWidth: 180, gap: 4 }, bodyText: { color: '#283618', fontSize: 14, fontWeight: '600' }, role: { color: '#283618', backgroundColor: '#E6E8C7', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, fontSize: 12 }, empty: { color: '#6F7457', paddingVertical: 18 },
+  action: { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: '#D9D6B5', backgroundColor: '#F0ECCD' }, actionActive: { backgroundColor: '#BC6C25', borderColor: '#BC6C25' }, actionText: { color: '#283618', fontSize: 12, fontWeight: '600' }, actionTextActive: { color: '#fff' }, disabled: { opacity: 0.55 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, form: { width: '100%', gap: 12 }, field: { gap: 6 }, label: { color: '#283618', fontSize: 13, fontWeight: '600' }, input: { color: '#283618', borderWidth: 1, borderColor: '#D9D6B5', backgroundColor: '#FFFCED', padding: 10, borderRadius: 8 }, multiline: { minHeight: 80, textAlignVertical: 'top' }, loader: { marginVertical: 30 }, errorBox: { gap: 10, alignItems: 'flex-start', marginBottom: 16 }, error: { color: '#A23524' }, success: { color: '#DDA15E', marginBottom: 16 },
 });

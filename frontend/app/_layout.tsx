@@ -1,17 +1,27 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
-import { Stack, usePathname } from 'expo-router';
+import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
+import { Ionicons } from '@expo/vector-icons';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { AppearanceProvider, palette, useAppStyles } from '@/lib/app-appearance';
 
 export const unstable_settings = {
   anchor: '(tabs)',
 };
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  return <AppearanceProvider><AppLayout /></AppearanceProvider>;
+}
+
+function BackButton() {
+  const router = useRouter();
+  return <Pressable accessibilityRole="button" accessibilityLabel="Назад" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={baseStyles.backButton}><Ionicons name="arrow-back" size={24} color={palette.forest} /></Pressable>;
+}
+
+function AppLayout() {
+  const styles = useAppStyles(baseStyles);
   const isWeb = Platform.OS === 'web';
   const pathname = usePathname();
   // Админ-панель веба занимает весь экран, пользовательские экраны сохраняют прежний размер.
@@ -20,26 +30,28 @@ export default function RootLayout() {
   const viewportStyle = isWebAdmin ? styles.adminViewport : isWeb ? styles.webViewport : styles.nativeViewport;
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: palette.olive, background: palette.cream, card: palette.cream, text: palette.forest, border: palette.border } }}>
       <View style={shellStyle}>
         <View style={viewportStyle}>
           <View style={styles.stackContainer}>
-            <Stack>
+            <Stack screenOptions={{ headerLeft: () => <BackButton />, headerTintColor: palette.forest }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-              <Stack.Screen name="company/[id]" options={{ title: 'Профиль места' }} />
+              <Stack.Screen name="company/[id]" options={{ headerTitle: '', headerTransparent: true }} />
               <Stack.Screen name="admin" options={{ headerShown: false }} />
+              <Stack.Screen name="settings" options={{ title: 'Настройки', headerStyle: { backgroundColor: palette.cream }, headerTintColor: palette.forest }} />
             </Stack>
           </View>
         </View>
       </View>
-      <StatusBar style="auto" />
+      <StatusBar style="dark" />
     </ThemeProvider>
   );
 }
 
-const styles = StyleSheet.create({
-  adminShell: { flex: 1, minHeight: '100%', backgroundColor: '#0c1017' },
+const baseStyles = StyleSheet.create({
+  backButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(254,250,224,0.94)' },
+  adminShell: { flex: 1, minHeight: '100%', backgroundColor: '#FEFAE0' },
   adminViewport: { flex: 1, width: '100%' },
   nativeShell: {
     flex: 1,

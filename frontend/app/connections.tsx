@@ -1,3 +1,4 @@
+import { useAppStyles } from '@/lib/app-appearance';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -11,6 +12,7 @@ function Action({ title, onPress, disabled = false, secondary = false }: {
   disabled?: boolean;
   secondary?: boolean;
 }) {
+  const styles = useAppStyles(baseStyles);
   return (
     <TouchableOpacity
       accessibilityRole="button"
@@ -29,6 +31,7 @@ function PeopleSection({ title, empty, people, actions }: {
   people: Person[];
   actions: (person: Person) => ReactNode;
 }) {
+  const styles = useAppStyles(baseStyles);
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle} accessibilityRole="header">{title}</Text>
@@ -47,6 +50,7 @@ function PeopleSection({ title, empty, people, actions }: {
 }
 
 export default function ConnectionsScreen() {
+  const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const [connections, setConnections] = useState<Connections | null>(null);
   const [query, setQuery] = useState('');
@@ -122,8 +126,8 @@ export default function ConnectionsScreen() {
       <Stack.Screen options={{
         title: 'Друзья',
         headerBackTitle: 'Профиль',
-        headerStyle: { backgroundColor: '#ffffff' },
-        headerTintColor: '#0f172a',
+        headerStyle: { backgroundColor: '#FFFCED' },
+        headerTintColor: '#283618',
         headerShadowVisible: false,
       }} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -131,7 +135,7 @@ export default function ConnectionsScreen() {
           <View style={styles.top}>
             {connections && <Text selectable style={styles.personName}>Мой ID {connections.userId}</Text>}
             {!needsLogin && <Action title="Обновить" onPress={() => void refresh()} disabled={loading || busy} secondary />}
-            {loading && <ActivityIndicator accessibilityLabel="Загрузка списка друзей" color="#2563eb" />}
+            {loading && <ActivityIndicator accessibilityLabel="Загрузка списка друзей" color="#606C38" />}
           </View>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           {needsLogin && <Action title="Войти" onPress={() => router.push('/login')} />}
@@ -140,7 +144,7 @@ export default function ConnectionsScreen() {
               <TextInput
                 accessibilityLabel="Имя или ID пользователя"
                 placeholder="Имя или ID пользователя"
-                placeholderTextColor="#64748b"
+                placeholderTextColor="#6F7457"
                 style={styles.input}
                 value={query}
                 editable={!disabled}
@@ -184,8 +188,8 @@ export default function ConnectionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f1f5f9' },
+const baseStyles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#FEFAE0' },
   content: { padding: 20, paddingBottom: 40, gap: 16 },
   top: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -194,28 +198,28 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#D9D6B5',
     borderRadius: 12,
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
+    backgroundColor: '#FFFCED',
+    color: '#283618',
   },
   section: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFCED',
     borderRadius: 24,
     padding: 20,
     gap: 12,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 14 },
     elevation: 8,
   },
-  sectionTitle: { color: '#0f172a', fontSize: 18, fontWeight: '700' },
-  personName: { color: '#0f172a', fontSize: 16, fontWeight: '600' },
+  sectionTitle: { color: '#283618', fontSize: 18, fontWeight: '700' },
+  personName: { color: '#283618', fontSize: 16, fontWeight: '600' },
   error: { color: '#b42318', fontSize: 14, lineHeight: 20 },
-  person: { gap: 8, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e2e8f0' },
+  person: { gap: 8, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
   identity: { gap: 1 },
-  detail: { color: '#64748b', fontSize: 14, lineHeight: 20 },
+  detail: { color: '#6F7457', fontSize: 14, lineHeight: 20 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   action: {
     alignSelf: 'flex-start',
@@ -223,10 +227,10 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 12,
     borderRadius: 12,
-    backgroundColor: '#2563eb',
+    backgroundColor: '#606C38',
   },
-  secondaryAction: { backgroundColor: '#dbeafe' },
+  secondaryAction: { backgroundColor: '#F0ECCD' },
   disabled: { opacity: 0.55 },
   actionText: { color: '#fff', fontWeight: '700' },
-  secondaryText: { color: '#1d4ed8' },
+  secondaryText: { color: '#283618' },
 });

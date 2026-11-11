@@ -8,12 +8,12 @@
   <script src="/map-assets/boundary-clip.js"></script>
   <script src="/map-assets/russian-labels.js"></script>
   <style>
-    html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#eaf1fa}
-    #status{position:absolute;top:12px;left:12px;right:12px;background:white;color:#334155;padding:10px;border-radius:10px;z-index:2;display:none}
-    .pin{border:3px solid white;box-shadow:0 2px 8px #33415566;width:26px;height:26px;border-radius:50%;background:#2563eb;cursor:pointer}
-    .person{background:#ff2d55}.chosen{background:#ffb800;width:20px;height:20px}
+    html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#fefae0}
+    #status{position:absolute;top:12px;left:12px;right:12px;background:#fffced;color:#283618;padding:10px;border-radius:10px;z-index:2;display:none}
+    .pin{border:3px solid #fffced;box-shadow:0 2px 8px #28361866;width:26px;height:26px;border-radius:50%;background:#606c38;cursor:pointer}
+    .person{background:#bc6c25}.chosen{background:#dda15e;width:20px;height:20px}
     .navigation-pin{pointer-events:none;display:grid;place-items:center;color:white;font-size:13px;font-weight:700}
-    .route-start{background:#0f766e}.route-destination{background:#1d4ed8}
+    .route-start{background:#283618}.route-destination{background:#606c38}
     .maplibregl-ctrl-bottom-right{bottom:6px}.maplibregl-ctrl-attrib{font-size:11px}
   </style>
 </head>
@@ -220,9 +220,9 @@
       map.addSource('navigation-route', {type:'geojson', data:emptyRoute});
       const routeLayout = {'line-join':'round', 'line-cap':'round'};
       map.addLayer({id:'navigation-route-outline', type:'line', source:'navigation-route', layout:routeLayout,
-        paint:{'line-color':'#fff','line-width':9}});
+        paint:{'line-color':'#fffced','line-width':9}});
       map.addLayer({id:'navigation-route-line', type:'line', source:'navigation-route', layout:routeLayout,
-        paint:{'line-color':'#2563eb','line-width':6}});
+        paint:{'line-color':'#606c38','line-width':6}});
       ready = true;
       window.applyMapState(state);
       notify({type:'ready'});

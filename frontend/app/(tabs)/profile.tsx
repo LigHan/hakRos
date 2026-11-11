@@ -214,7 +214,7 @@ export default function ProfileScreen() {
   if (!session || loading) {
     return (
       <ThemedView style={styles.loadingContainer}>
-        <Ionicons name="person-circle-outline" size={48} color="#007AFF" />
+        <Ionicons name="person-circle-outline" size={48} color="#606C38" />
         <Text style={styles.loadingText}>Загрузка профиля...</Text>
       </ThemedView>
     );
@@ -226,8 +226,8 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {Platform.OS === 'web' && session.role === 'admin' && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/admin')} style={{ backgroundColor: '#0f172a', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Панель администратора</Text></TouchableOpacity>}
-        <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/statistics')} style={{ backgroundColor: '#2563eb', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Открыть статистику</Text></TouchableOpacity>
+        {Platform.OS === 'web' && session.role === 'admin' && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/admin')} style={{ backgroundColor: '#283618', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Панель администратора</Text></TouchableOpacity>}
+        <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/statistics')} style={{ backgroundColor: '#606C38', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Открыть статистику</Text></TouchableOpacity>
         {session.role === 'user' && (
           <TouchableOpacity
             accessibilityRole="button"
@@ -235,12 +235,12 @@ export default function ProfileScreen() {
             style={styles.friendsLink}
             onPress={() => router.push('/connections')}
           >
-            <Ionicons name="people-outline" size={22} color="#2563eb" />
+            <Ionicons name="people-outline" size={22} color="#606C38" />
             <Text style={styles.friendsLinkLabel}>Друзья</Text>
             {!!connections?.incomingRequests.length && (
               <Text style={styles.friendsLinkLabel}>{connections.incomingRequests.length}</Text>
             )}
-            <Ionicons name="chevron-forward" size={18} color="#2563eb" />
+            <Ionicons name="chevron-forward" size={18} color="#606C38" />
           </TouchableOpacity>
         )}
         {error && (
@@ -264,7 +264,7 @@ export default function ProfileScreen() {
           <Text style={styles.handle}>@{session.handle}</Text>
           <Text style={styles.email}>{session.email}</Text>
           <View style={styles.accountTag}>
-            <Ionicons name={isCompany ? 'business' : 'person'} size={16} color="#2563eb" />
+            <Ionicons name={isCompany ? 'business' : 'person'} size={16} color="#606C38" />
             <Text style={styles.accountTagText}>
               {isCompany ? 'Аккаунт компании' : 'Личный аккаунт'}
             </Text>
@@ -296,9 +296,9 @@ export default function ProfileScreen() {
               style={styles.managePlaces}
               onPress={() => router.push('/manage-places')}
             >
-              <Ionicons name="business-outline" size={20} color="#2563eb" />
+              <Ionicons name="business-outline" size={20} color="#606C38" />
               <Text style={styles.friendsLinkLabel}>Управлять заведениями</Text>
-              <Ionicons name="chevron-forward" size={18} color="#2563eb" />
+              <Ionicons name="chevron-forward" size={18} color="#606C38" />
             </TouchableOpacity>
             <View style={styles.companyActions}>
               <TouchableOpacity style={styles.companyActionPrimary} onPress={handleUploadPost} activeOpacity={0.85}>
@@ -306,7 +306,7 @@ export default function ProfileScreen() {
                 <Text style={styles.companyActionPrimaryText}>Выложить пост</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.companyActionSecondary} onPress={handlePublishHighlight} activeOpacity={0.85}>
-                <Ionicons name="sparkles-outline" size={18} color="#2563eb" />
+                <Ionicons name="sparkles-outline" size={18} color="#606C38" />
                 <Text style={styles.companyActionSecondaryText}>Выложить новинку</Text>
               </TouchableOpacity>
             </View>
@@ -345,7 +345,7 @@ export default function ProfileScreen() {
                     onPress={() => handleOpenCompany(review.postId)}
                   >
                     <View style={styles.companyReviewHeader}>
-                      <Ionicons name="person-circle-outline" size={20} color="#2563eb" />
+                      <Ionicons name="person-circle-outline" size={20} color="#606C38" />
                       <View style={styles.companyReviewMeta}>
                         <Text style={styles.companyReviewAuthor}>{review.author}</Text>
                         <Text style={styles.companyReviewPlace}>{review.place}</Text>
@@ -427,7 +427,7 @@ export default function ProfileScreen() {
                             <Text style={styles.followingDescription} numberOfLines={2}>{place.description}</Text>
                           ) : null}
                         </View>
-                        <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                        <Ionicons name="chevron-forward" size={18} color="#6F7457" />
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -518,10 +518,10 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#dbeafe',
+    backgroundColor: '#F0ECD1',
     marginBottom: 16,
   },
-  friendsLinkLabel: { color: '#1d4ed8', fontWeight: '700' },
+  friendsLinkLabel: { color: '#283618', fontWeight: '700' },
   managePlaces: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -529,11 +529,11 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#dbeafe',
+    backgroundColor: '#F0ECD1',
   },
   container: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#FFFCED',
   },
   scroll: {
     padding: 20,
@@ -556,11 +556,11 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFCED',
     borderRadius: 28,
     padding: 24,
     gap: 12,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.12,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 18 },
@@ -572,24 +572,24 @@ const styles = StyleSheet.create({
     borderRadius: 44,
   },
   displayName: {
-    color: '#0f172a',
+    color: '#283618',
     fontSize: 24,
     fontWeight: '700',
     textAlign: 'center',
   },
   surname: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
   handle: {
     fontSize: 14,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
   email: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: '#6F7457',
     fontStyle: 'italic',
   },
   accountTag: {
@@ -605,7 +605,7 @@ const styles = StyleSheet.create({
   accountTagText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#1d4ed8',
+    color: '#283618',
   },
   statsRow: {
     flexDirection: 'row',
@@ -623,18 +623,18 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0f172a',
+    color: '#283618',
   },
   statLabel: {
     fontSize: 12,
-    color: '#64748b',
+    color: '#6F7457',
     textTransform: 'uppercase',
     letterSpacing: 0.4,
     textAlign: 'center',
   },
   subStatNote: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#6F7457',
     fontStyle: 'italic',
     textAlign: 'center',
   },
@@ -654,11 +654,11 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
   section: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFCED',
     borderRadius: 24,
     padding: 20,
     gap: 16,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 14 },
@@ -671,13 +671,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionTitle: {
-    color: '#0f172a',
+    color: '#283618',
     fontSize: 18,
     fontWeight: '700',
   },
   sectionSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
   horizontalList: {
@@ -686,9 +686,9 @@ const styles = StyleSheet.create({
   collectionCard: {
     width: 180,
     borderRadius: 18,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#FFFCED',
     overflow: 'hidden',
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
@@ -701,20 +701,20 @@ const styles = StyleSheet.create({
   collectionTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
     paddingHorizontal: 12,
     paddingTop: 10,
     lineHeight: 18,
   },
   collectionSubtitle: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#6F7457',
     paddingHorizontal: 12,
     paddingBottom: 12,
   },
   emptyStateText: {
     fontSize: 14,
-    color: '#94a3b8',
+    color: '#6F7457',
     lineHeight: 20,
     textAlign: 'center',
     fontStyle: 'italic',
@@ -728,9 +728,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
     borderRadius: 18,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#FFFCED',
     padding: 14,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -748,16 +748,16 @@ const styles = StyleSheet.create({
   followingName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   followingHandle: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#6F7457',
     textTransform: 'lowercase',
   },
   followingDescription: {
     fontSize: 13,
-    color: '#475569',
+    color: '#6F7457',
     lineHeight: 16,
   },
   companyActions: {
@@ -774,8 +774,8 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 20,
-    backgroundColor: '#2563eb',
-    shadowColor: '#2563eb',
+    backgroundColor: '#606C38',
+    shadowColor: '#606C38',
     shadowOpacity: 0.25,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
@@ -799,17 +799,17 @@ const styles = StyleSheet.create({
   companyActionSecondaryText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#606C38',
   },
   companyReviewsList: {
     gap: 12,
   },
   companyReviewCard: {
     borderRadius: 18,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#FFFCED',
     padding: 16,
     gap: 10,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.05,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -826,12 +826,12 @@ const styles = StyleSheet.create({
   companyReviewAuthor: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#283618',
   },
   companyReviewPlace: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#2563eb',
+    color: '#606C38',
   },
   companyReviewRating: {
     flexDirection: 'row',
@@ -845,23 +845,23 @@ const styles = StyleSheet.create({
   },
   companyReviewComment: {
     fontSize: 14,
-    color: '#1f2937',
+    color: '#283618',
     lineHeight: 20,
   },
   companyReviewDate: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#6F7457',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 16,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#FFFCED',
   },
   loadingText: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#6F7457',
     fontWeight: '500',
   },
 });

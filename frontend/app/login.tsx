@@ -1,8 +1,10 @@
+import { useAppStyles, useAppearance } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import {
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -19,16 +21,19 @@ import { api } from '@/lib/statistics';
 import { setUserSession, type UserSession } from '@/lib/user-session';
 
 const THEME = {
-  primary: '#2563eb',
-  accent: '#0f172a',
-  muted: '#64748b',
+  primary: '#606C38',
+  accent: '#283618',
+  muted: '#6F7457',
   surface: '#ffffff',
   border: 'rgba(226,232,240,0.8)',
   backdrop: '#f4f6fb',
 };
 
 export default function AuthScreen() {
+  const styles = useAppStyles(baseStyles);
+  const { mode: appearanceMode } = useAppearance();
   const router = useRouter();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -70,7 +75,13 @@ export default function AuthScreen() {
       };
       await setUserSession(session);
       // Сервер определяет роль; администратору открываем отдельную панель.
-      router.replace(user.role === 'admin' && Platform.OS === 'web' ? '/admin' : '/profile');
+      if (user.role === 'admin' && Platform.OS === 'web') {
+        router.replace('/admin');
+      } else if (returnTo === 'post' || returnTo === 'story') {
+        router.replace({ pathname: '/create', params: { kind: returnTo } });
+      } else {
+        router.replace('/');
+      }
     } catch (error) {
       console.error('❌ Ошибка при создании сессии:', error);
       setAuthError(error instanceof Error ? error.message : 'Не удалось войти в систему.');
@@ -101,7 +112,7 @@ export default function AuthScreen() {
           <View style={styles.card}>
             <View style={styles.header}>
               <View style={styles.avatarWrapper}>
-                <Ionicons name="person-circle" size={48} color={THEME.primary} />
+                {appearanceMode === 'sketch' ? <Image source={require('@/assets/images/mascot-sketch.png')} style={{ width: 70, height: 70 }} resizeMode="contain" accessibilityLabel="Маскот приложения" /> : <Ionicons name="person-circle" size={48} color={THEME.primary} />}
               </View>
               <Text style={styles.title}>{isRegister ? 'Добро пожаловать!' : 'С возвращением!'}</Text>
               <Text style={styles.subtitle}>
@@ -261,7 +272,7 @@ export default function AuthScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#f2f4fa',
@@ -279,7 +290,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     padding: 28,
     gap: 20,
-    shadowColor: '#0f172a',
+    shadowColor: '#283618',
     shadowOpacity: 0.08,
     shadowRadius: 32,
     shadowOffset: { width: 0, height: 20 },
@@ -346,7 +357,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 14,
     alignItems: 'center',
-    shadowColor: '#2563eb',
+    shadowColor: '#606C38',
     shadowOpacity: 0.28,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },

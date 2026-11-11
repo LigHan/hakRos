@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { palette, useAppStyles } from '@/lib/app-appearance';
 import type { MapRoute, MapSearchResult, RoutePlan, TravelMode } from '@/lib/map-navigation';
 
 export type MapSearchState = {
@@ -15,10 +16,11 @@ export function MapSearchResults({ search, onSelect, onClose }: {
   onSelect: (result: MapSearchResult) => void;
   onClose: () => void;
 }) {
+  const styles = useAppStyles(baseStyles);
   return (
-    <View style={styles.results}>
+    <View style={styles.resultsPanel}>
       <View style={styles.resultHeader}>
-        {search.pending ? <ActivityIndicator size="small" color="#2563eb" /> : null}
+        {search.pending ? <ActivityIndicator size="small" color={palette.olive} /> : null}
         <Text accessibilityLiveRegion="polite" style={[styles.hint, styles.grow]}>
           {search.pending ? 'Ищем адрес…' : search.message || 'Выберите адрес или место'}
         </Text>
@@ -28,7 +30,7 @@ export function MapSearchResults({ search, onSelect, onClose }: {
         <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
           {search.results.map(result => (
             <TouchableOpacity key={result.id} accessibilityRole="button" onPress={() => onSelect(result)} style={styles.result}>
-              <Ionicons aria-hidden name="location-outline" size={18} color="#2563eb" />
+              <Ionicons aria-hidden name="location-outline" size={18} color={palette.olive} />
               <View style={styles.grow}>
                 <Text style={styles.title}>{result.title}</Text>
                 {result.subtitle ? <Text style={styles.hint}>{result.subtitle}</Text> : null}
@@ -46,8 +48,8 @@ const modes = [{ value: 'walk', label: 'Пешком' }, { value: 'drive', label
 
 function Close({ label, onPress }: { label: string; onPress: () => void }) {
   return (
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={styles.close}>
-      <Ionicons name="close" size={20} color="#475569" />
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={baseStyles.close}>
+      <Ionicons name="close" size={20} color={palette.muted} />
     </TouchableOpacity>
   );
 }
@@ -60,8 +62,8 @@ function Button({ label, onPress, disabled = false, primary = false }: {
 }) {
   return (
     <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onPress}
-      style={[styles.button, primary && styles.primary, disabled && styles.disabled]}>
-      <Text style={[styles.buttonText, primary && styles.primaryText]}>{label}</Text>
+      style={[baseStyles.button, primary && baseStyles.primary, disabled && baseStyles.disabled]}>
+      <Text style={[baseStyles.buttonText, primary && baseStyles.primaryText]}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -89,12 +91,13 @@ export function MapRoutePanel({ destination, plan, route, status, error, onPlan,
   onEditOrigin: () => void;
   onBuild: () => void;
 }) {
+  const styles = useAppStyles(baseStyles);
   const busy = status !== 'idle';
   return (
     <View style={styles.routeContent}>
       <View style={styles.resultHeader}>
         <View style={styles.grow}>
-          <Text accessibilityRole="header" style={styles.title}>{destination.title}</Text>
+          <Text accessibilityRole="header" style={styles.routeTitle}>{destination.title}</Text>
           {destination.subtitle ? <Text style={styles.hint}>{destination.subtitle}</Text> : null}
         </View>
         <Close label="Закрыть карточку маршрута" onPress={onClose} />
@@ -137,22 +140,23 @@ export function MapRoutePanel({ destination, plan, route, status, error, onPlan,
   );
 }
 
-const styles = StyleSheet.create({
-  results: { marginTop: 8, maxHeight: '30%', flexShrink: 1, borderRadius: 14, paddingHorizontal: 12, backgroundColor: '#fff' },
+const baseStyles = StyleSheet.create({
+  resultsPanel: { marginTop: 8, maxHeight: '30%', flexShrink: 1, borderRadius: 14, paddingHorizontal: 12, backgroundColor: palette.surface },
   resultHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   grow: { flex: 1, minWidth: 0 },
   close: { width: 34, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
-  result: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#e2e8f0' },
+  result: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderColor: palette.border },
   routeContent: { gap: 8, paddingBottom: 4 },
-  title: { color: '#0f172a', fontSize: 15, fontWeight: '700' },
-  hint: { color: '#475569', fontSize: 13, lineHeight: 18 },
+  title: { color: palette.forest, fontSize: 15, fontWeight: '700' },
+  routeTitle: { color: palette.forest, fontSize: 20, fontWeight: '700' },
+  hint: { color: palette.muted, fontSize: 13, lineHeight: 18 },
   error: { color: '#b42318', fontSize: 13 },
   routeSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 },
-  summary: { color: '#0f172a', fontSize: 16, fontWeight: '700' },
+  summary: { color: palette.forest, fontSize: 16, fontWeight: '700' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  button: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: 40, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#eaf1ff' },
-  buttonText: { color: '#1d4ed8', fontWeight: '600', fontSize: 13 },
-  primary: { backgroundColor: '#2563eb' },
-  primaryText: { color: '#fff' },
+  button: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: 40, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#F0ECD1' },
+  buttonText: { color: palette.forest, fontWeight: '600', fontSize: 13 },
+  primary: { backgroundColor: palette.olive },
+  primaryText: { color: palette.cream },
   disabled: { opacity: 0.55 },
 });

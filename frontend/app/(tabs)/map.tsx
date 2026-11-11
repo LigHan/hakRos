@@ -7,6 +7,7 @@ import { Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableO
 import MapCanvas from '@/components/MapCanvas';
 import type { MapCoordinates, MapPoint, MapState } from '@/components/MapCanvas.types';
 import { MapRoutePanel, MapSearchResults, type MapSearchState } from '@/components/map-navigation-controls';
+import { palette, useAppStyles } from '@/lib/app-appearance';
 import { currentMapCoordinates, findAddresses, findRoute, placeSearchResult, type MapRoute, type MapSearchResult, type RoutePlan, type TravelMode } from '@/lib/map-navigation';
 import { registerMapSearchHandler } from '@/lib/map-search';
 import { api, ApiError, authorized } from '@/lib/statistics';
@@ -15,6 +16,7 @@ import { getUserSession, type UserSession } from '@/lib/user-session';
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Не удалось выполнить действие';
 
 export default function MapScreen() {
+  const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const params = useLocalSearchParams<{ focusType?: string; focusId?: string }>();
   const [session, setSession] = useState<UserSession | null>(null);
@@ -304,14 +306,20 @@ export default function MapScreen() {
         onSelect={select} onError={canvasError} onSubmit={submitPoint} />
     </View>
     <View pointerEvents="box-none" style={styles.overlay}>
-      <View style={styles.header}><Ionicons name="map" size={20} color="#2563eb" /><Text style={styles.title}>Карта города</Text><TouchableOpacity accessibilityLabel="Моё местоположение" onPress={() => void locate()}><Ionicons name="locate" size={23} color="#2563eb" /></TouchableOpacity></View>
-      <View style={styles.search}>
+      <View style={styles.headerCard}>
+        <Ionicons name="map" size={20} color={palette.olive} />
+        <Text accessibilityRole="header" style={styles.title}>Карта города</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Моё местоположение" onPress={() => void locate()}>
+          <Ionicons name="locate" size={23} color={palette.olive} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.searchCard}>
         <TextInput accessibilityLabel="Поиск адреса или места" placeholder="Адрес или название места"
-          value={query} onChangeText={text => { setQuery(text); cancelSearch(); }}
+          placeholderTextColor={palette.muted} value={query} onChangeText={text => { setQuery(text); cancelSearch(); }}
           onSubmitEditing={() => void search(query)} returnKeyType="search" maxLength={160} style={styles.input} />
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Найти на карте"
           onPress={() => void search(query)} style={styles.searchButton}>
-          <Ionicons name="search" size={22} color="#2563eb" />
+          <Ionicons name="search" size={22} color={palette.olive} />
         </TouchableOpacity>
       </View>
       {searchState && <MapSearchResults search={searchState}
@@ -343,14 +351,25 @@ export default function MapScreen() {
   </View>;
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#eaf1fa' }, map: { ...StyleSheet.absoluteFill },
+const baseStyles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: palette.cream }, map: { ...StyleSheet.absoluteFill },
   overlay: { ...StyleSheet.absoluteFill, padding: 16, paddingTop: Platform.OS === 'web' ? 16 : 48, paddingBottom: 100, justifyContent: 'flex-start' },
-  header: { backgroundColor: '#fff', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, title: { color: '#0f172a', fontWeight: '700', fontSize: 18, flex: 1 },
-  search: { marginTop: 8, backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }, input: { flex: 1, paddingVertical: 13, color: '#0f172a' }, searchButton: { minWidth: 42, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
-  message: { marginTop: 8, backgroundColor: '#fff', padding: 10, borderRadius: 12 }, error: { color: '#b42318', fontSize: 13 },
-  panel: { flexGrow: 0, marginTop: 'auto', backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 18, padding: 14, maxHeight: '45%' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  primary: { backgroundColor: '#2563eb', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 }, primaryText: { color: 'white', fontWeight: '700', textAlign: 'center' },
-  secondary: { backgroundColor: '#eaf1ff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 }, secondaryText: { color: '#1d4ed8', fontWeight: '600' },
-  form: { gap: 8, marginTop: 10 }, friendRow: { gap: 3, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }, field: { borderWidth: 1, borderColor: '#cbd5e1', padding: 10, borderRadius: 10, color: '#0f172a' }, hint: { color: '#64748b', fontSize: 12, lineHeight: 18, marginTop: 8 }, link: { color: '#2563eb', marginTop: 8, fontSize: 13 },
+  headerCard: { backgroundColor: palette.surface, borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  title: { color: palette.forest, fontWeight: '700', fontSize: 20, flex: 1 },
+  searchCard: { marginTop: 8, backgroundColor: palette.surface, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
+  input: { flex: 1, paddingVertical: 13, color: palette.forest },
+  searchButton: { minWidth: 42, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  message: { marginTop: 8, backgroundColor: palette.surface, padding: 10, borderRadius: 12 },
+  error: { color: '#b42318', fontSize: 13 },
+  panel: { flexGrow: 0, marginTop: 'auto', backgroundColor: 'rgba(254,250,224,0.96)', borderRadius: 18, padding: 14, maxHeight: '45%' },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  primary: { backgroundColor: palette.olive, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
+  primaryText: { color: palette.cream, fontWeight: '700', textAlign: 'center' },
+  secondary: { backgroundColor: '#F0ECD1', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
+  secondaryText: { color: palette.forest, fontWeight: '600' },
+  form: { gap: 8, marginTop: 10 },
+  friendRow: { gap: 3, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: palette.border },
+  field: { borderWidth: 1, borderColor: palette.border, padding: 10, borderRadius: 10, color: palette.forest },
+  hint: { color: palette.muted, fontSize: 12, lineHeight: 18, marginTop: 8 },
+  link: { color: palette.olive, marginTop: 8, fontSize: 13 },
 });

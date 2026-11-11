@@ -64,6 +64,11 @@ export const formatCompactNumber = (number: number): string => {
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '') ||
   (Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000');
 
+export function withPlaceCoverUrl(post: Post): Post {
+  if (!post.image.startsWith('/api/place-covers/')) return post;
+  return { ...post, image: `${API_BASE_URL}${post.image}` };
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`API returned HTTP ${response.status}`);
@@ -73,7 +78,8 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export const databaseService = {
   async getPosts(): Promise<Post[]> {
-    return readJson<Post[]>(await fetch(`${API_BASE_URL}/api/posts`));
+    const posts = await readJson<Post[]>(await fetch(`${API_BASE_URL}/api/posts`));
+    return posts.map(withPlaceCoverUrl);
   },
 
   async getStories(): Promise<Story[]> {
@@ -82,6 +88,6 @@ export const databaseService = {
 
   async getPostById(id: string): Promise<Post | null> {
     const response = await fetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`);
-    return response.status === 404 ? null : readJson<Post>(response);
+    return response.status === 404 ? null : withPlaceCoverUrl(await readJson<Post>(response));
   },
 };

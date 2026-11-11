@@ -10,6 +10,15 @@ const { test } = require('node:test');
 
 const path = '/api/company/places';
 const password = 'test-password';
+const coverBase64 = [
+  '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT',
+  '/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAABAAEDASIAAhEBAxEB',
+  '/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkK',
+  'FhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx',
+  '8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEE',
+  'BSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiI',
+  'mKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDq6KKK/os/Kj//2Q==',
+].join('');
 
 async function startApi(database) {
   const server = spawn(process.execPath, ['server.js'], {
@@ -74,7 +83,17 @@ async function startApi(database) {
     return data.token;
   }
 
-  return { request, login, stop };
+  async function requestCover(endpoint, expectedStatus) {
+    const response = await fetch(origin + endpoint);
+    assert.equal(response.status, expectedStatus);
+    if (expectedStatus === 200) {
+      assert.equal(response.headers.get('content-type'), 'image/jpeg');
+      assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+      assert.equal(Buffer.from(await response.arrayBuffer()).toString('base64'), coverBase64);
+    }
+  }
+
+  return { request, requestCover, login, stop };
 }
 
 test('Компания управляет только своими карточками, а данные сохраняются после перезапуска', async t => {
@@ -153,6 +172,19 @@ test('Компания управляет только своими карточ
   assert.deepEqual(saved.workingHours, next.workingHours);
   assert.equal(saved.image, next.image);
 
+  const coverDraft = { ...next, image: undefined, coverBase64 };
+  await api.request(editPath, 404, { token: other, method: 'PUT', body: coverDraft });
+  await api.request(editPath, 400, { token: owner, method: 'PUT', body: { ...coverDraft, coverBase64: 'bm90LWEtanBlZw==' } });
+  assert.equal((await api.request(publicPath, 200)).image, next.image);
+
+  const covered = await api.request(editPath, 200, { token: owner, method: 'PUT', body: coverDraft });
+  assert.match(covered.image, /^\/api\/place-covers\//);
+  await api.requestCover(covered.image, 200);
+  const keptCover = await api.request(editPath, 200, {
+    token: owner, method: 'PUT', body: { ...next, image: undefined, bio: 'Обновлённое описание' },
+  });
+  assert.equal(keptCover.image, covered.image);
+
   const seed = await api.request('/api/posts/1', 200);
   const updatedSeed = await api.request(`${path}/1`, 200, {
     token: demoCompany,
@@ -167,12 +199,14 @@ test('Компания управляет только своими карточ
   await api.stop();
   api = await startApi(database);
   const freshToken = await api.login('cafe@owner.invalid');
-  assert.deepEqual(await api.request(editPath, 200, { token: freshToken }), saved);
-  assert.deepEqual(await api.request(publicPath, 200), saved);
+  assert.deepEqual(await api.request(editPath, 200, { token: freshToken }), keptCover);
+  assert.deepEqual(await api.request(publicPath, 200), keptCover);
+  await api.requestCover(keptCover.image, 200);
 
   const admin = await api.login('admin@local.test', 'demo1234');
   await api.request(`/api/admin/places/${created.id}`, 200, { token: admin, method: 'DELETE' });
   assert.deepEqual(await api.request(path, 200, { token: freshToken }), []);
   await api.request(path, 409, { token: freshToken, method: 'POST', body: draft });
   await api.request(publicPath, 404);
+  await api.requestCover(keptCover.image, 404);
 });

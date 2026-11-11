@@ -31,6 +31,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+app.use('/api/company/places', companyPlaces.router);
 app.use(express.json());
 
 app.get('/', (_req, res) => {
@@ -48,6 +49,8 @@ app.get('/api/posts', async (_req, res) => {
 app.get('/api/stories', async (_req, res) => {
   res.json(await databaseService.getStories());
 });
+
+app.get('/api/place-covers/:placeId/:version', companyPlaces.getCover);
 
 app.get('/api/posts/:id', async (req, res) => {
   const post = await databaseService.getPostById(req.params.id);
@@ -130,7 +133,6 @@ app.post('/login', async (req, res) => {
 
 app.use('/api', statistics.router);
 app.use('/api/connections', connections.router);
-app.use('/api/company/places', companyPlaces.router);
 // Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
 app.use('/api/admin', require('./admin')(db, statistics.auth));
 

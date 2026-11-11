@@ -1,7 +1,11 @@
+import { Image } from 'expo-image';
+import { ImageManipulator, SaveFormat, type ImageManipulatorContext, type ImageRef } from 'expo-image-manipulator';
+import { launchImageLibraryAsync } from 'expo-image-picker';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, type TextInputProps } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, type TextInputProps } from 'react-native';
 
+import { PlaceHoursEditor } from '@/components/place-hours-editor';
 import type { Post, WorkingHours } from '@/constants/content';
 import { createCompanyPlace, getCompanyPlaces, updateCompanyPlace, type CompanyPlaceFields } from '@/lib/company-places';
 import { placeCategories } from '@/lib/place-categories';
@@ -10,12 +14,12 @@ import { ApiError } from '@/lib/statistics';
 const categories = [{ id: '', name: 'Без категории' }, ...placeCategories.filter(category => category.id !== 'all')];
 const categoryNames = new Map<string, string>(categories.map(category => [category.id, category.name]));
 
-type HoursRow = WorkingHours & { key: string };
 type Draft = {
   id?: string;
   requestId: string;
   fields: Omit<CompanyPlaceFields, 'workingHours'>;
-  hours: HoursRow[];
+  hours: WorkingHours[];
+  photoUri?: string;
 };
 
 function makeKey() {
@@ -31,10 +35,33 @@ function makeDraft(post?: Post): Draft {
       address: post?.address ?? '',
       bio: post?.bio ?? '',
       category: post?.category ?? '',
-      image: post?.image?.startsWith('data:') ? undefined : post?.image,
     },
-    hours: (post?.workingHours ?? []).map((slot, index) => ({ ...slot, key: `existing-${index}` })),
+    hours: post?.workingHours ?? [],
+    photoUri: post?.image.startsWith('data:') ? undefined : post?.image,
   };
+}
+
+async function pickCover() {
+  const result = await launchImageLibraryAsync({ mediaTypes: ['images'] });
+  if (result.canceled) return null;
+
+  const { uri } = result.assets[0];
+  let context: ImageManipulatorContext | undefined;
+  let rendered: ImageRef | undefined;
+  try {
+    context = ImageManipulator.manipulate(uri, { maxWidth: 1280, maxHeight: 1280 });
+    rendered = await context.renderAsync();
+    const image = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
+    if (Platform.OS === 'web') URL.revokeObjectURL(image.uri);
+    if (!image.base64 || image.base64.length > Math.floor(1024 * 1024 / 3) * 4) {
+      throw new Error('Не удалось подготовить фото размером до 1 МБ.');
+    }
+    return image.base64;
+  } finally {
+    rendered?.release();
+    context?.release();
+    if (Platform.OS === 'web') URL.revokeObjectURL(uri);
+  }
 }
 
 function Action({ title, onPress, disabled = false, secondary = false }: {
@@ -76,6 +103,9 @@ export default function ManagePlacesScreen() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activeHours, setActiveHours] = useState<number | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [error, setError] = useState('');
   const [needsLogin, setNeedsLogin] = useState(false);
   const [notice, setNotice] = useState('');
@@ -106,6 +136,9 @@ export default function ManagePlacesScreen() {
     setPlaces(null);
     setDraft(null);
     setSaving(false);
+    setActiveHours(null);
+    setPhotoBusy(false);
+    setPhotoError('');
     setNotice('');
     void load(controller.signal);
     return () => controller.abort();
@@ -114,6 +147,8 @@ export default function ManagePlacesScreen() {
   const edit = (post?: Post) => {
     setNotice('');
     setError('');
+    setActiveHours(null);
+    setPhotoError('');
     setDraft(makeDraft(post));
   };
 
@@ -121,24 +156,48 @@ export default function ManagePlacesScreen() {
     setDraft(current => current && { ...current, fields: { ...current.fields, [key]: value } });
   };
 
-  const updateHours = (key: string, field: keyof WorkingHours, text: string) => {
+  const updateHours = (hours: WorkingHours[]) => {
+    setDraft(current => current && { ...current, hours });
+    setActiveHours(null);
+  };
+
+  const choosePhoto = async () => {
+    if (!draft || saving || photoBusy) return;
+    const signal = activeRequest.current?.signal;
+    setPhotoBusy(true);
+    setPhotoError('');
+    try {
+      const coverBase64 = await pickCover();
+      if (!coverBase64 || signal?.aborted) return;
+      setDraft(current => current?.requestId === draft.requestId ? {
+        ...current,
+        photoUri: 'data:image/jpeg;base64,' + coverBase64,
+        fields: { ...current.fields, image: undefined, coverBase64 },
+      } : current);
+    } catch {
+      if (!signal?.aborted) setPhotoError('Не удалось открыть фото. Попробуйте выбрать другой файл.');
+    } finally {
+      if (!signal?.aborted) setPhotoBusy(false);
+    }
+  };
+
+  const removePhoto = () => {
+    setPhotoError('');
     setDraft(current => current && {
       ...current,
-      hours: current.hours.map(slot => slot.key === key ? { ...slot, [field]: text } : slot),
+      photoUri: undefined,
+      fields: { ...current.fields, image: '', coverBase64: undefined },
     });
   };
 
   const save = async () => {
-    if (!draft || saving || !draft.fields.place.trim()) return;
+    if (!draft || saving || photoBusy || activeHours !== null || !draft.fields.place.trim()) return;
 
     const signal = activeRequest.current?.signal;
     setSaving(true);
     setError('');
     try {
-      const fields = {
-        ...draft.fields,
-        workingHours: draft.hours.map(({ label, value }) => ({ label, value })),
-      };
+      const fields = { ...draft.fields, workingHours: draft.hours };
       const saved = draft.id
         ? await updateCompanyPlace(draft.id, fields, signal)
         : await createCompanyPlace(fields, draft.requestId, signal);
@@ -177,8 +236,23 @@ export default function ManagePlacesScreen() {
               onChangeText={text => updateField('address', text)} />
             <Field label="Описание" value={draft.fields.bio} maxLength={2000} multiline editable={!saving}
               onChangeText={text => updateField('bio', text)} />
-            <Field label="Ссылка на фото" placeholder="https://…" value={draft.fields.image ?? ''} maxLength={2048}
-              autoCapitalize="none" keyboardType="url" editable={!saving} onChangeText={text => updateField('image', text)} />
+            <View style={styles.field}>
+              <Text style={styles.label}>Фото заведения</Text>
+              {draft.photoUri && (
+                <Image
+                  source={{ uri: draft.photoUri }}
+                  accessibilityLabel="Предпросмотр фото заведения"
+                  contentFit="cover"
+                  style={styles.photo}
+                />
+              )}
+              <View style={styles.actions}>
+                <Action title={photoBusy ? 'Подготавливаем фото…' : draft.photoUri ? 'Заменить фото' : 'Выбрать фото'}
+                  secondary disabled={saving || photoBusy} onPress={() => void choosePhoto()} />
+                {draft.photoUri && <Action title="Убрать фото" secondary disabled={saving || photoBusy} onPress={removePhoto} />}
+              </View>
+              {photoError ? <Text accessibilityRole="alert" style={styles.error}>{photoError}</Text> : null}
+            </View>
 
             <View style={styles.field}>
               <Text style={styles.label}>Категория</Text>
@@ -202,29 +276,14 @@ export default function ManagePlacesScreen() {
               {!categoryNames.has(draft.fields.category) && <Text style={styles.detail}>{draft.fields.category}</Text>}
             </View>
 
-            <View style={styles.hours}>
-              <Text accessibilityRole="header" style={styles.title}>Часы работы</Text>
-              {draft.hours.map((slot, index) => (
-                <View key={slot.key} style={styles.hoursRow}>
-                  <Field label="День или период" accessibilityLabel={`День или период ${index + 1}`} placeholder="Пн–Пт"
-                    value={slot.label} maxLength={80} editable={!saving} onChangeText={text => updateHours(slot.key, 'label', text)} />
-                  <Field label="Часы работы" accessibilityLabel={`Часы работы ${index + 1}`} placeholder="09:00–18:00"
-                    value={slot.value} maxLength={100} editable={!saving} onChangeText={text => updateHours(slot.key, 'value', text)} />
-                  <Action title="Удалить строку" secondary disabled={saving} onPress={() => {
-                    setDraft(current => current && { ...current, hours: current.hours.filter(row => row.key !== slot.key) });
-                  }} />
-                </View>
-              ))}
-              <Action title="Добавить часы" secondary disabled={saving || draft.hours.length >= 30} onPress={() => {
-                const key = makeKey();
-                setDraft(current => current && { ...current, hours: [...current.hours, { key, label: '', value: '' }] });
-              }} />
-            </View>
+            <PlaceHoursEditor rows={draft.hours} activeIndex={activeHours} disabled={saving}
+              onEdit={setActiveHours} onChange={updateHours} />
 
             {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
             <View style={styles.actions}>
-              <Action title={saving ? 'Сохраняем…' : 'Сохранить'} disabled={saving || !draft.fields.place.trim()} onPress={() => void save()} />
-              <Action title="Отмена" secondary disabled={saving} onPress={() => { setError(''); setDraft(null); }} />
+              <Action title={saving ? 'Сохраняем…' : 'Сохранить'}
+                disabled={saving || photoBusy || activeHours !== null || !draft.fields.place.trim()} onPress={() => void save()} />
+              <Action title="Отмена" secondary disabled={saving || photoBusy} onPress={() => { setError(''); setDraft(null); }} />
             </View>
           </View>
         ) : (
@@ -274,8 +333,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
   },
   multiline: { minHeight: 92, textAlignVertical: 'top' },
-  hours: { gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#e2e8f0', paddingTop: 14 },
-  hoursRow: { gap: 8, paddingBottom: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#e2e8f0' },
+  photo: { width: '100%', height: 160, borderRadius: 12, backgroundColor: '#f1f5f9' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   action: {
     alignSelf: 'flex-start',

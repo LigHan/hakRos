@@ -7,7 +7,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
-type Status = 'checking' | 'mock' | 'gigachat' | 'unavailable';
+type Status = 'checking' | 'gigachat' | 'unavailable';
 
 const API_BASE = process.env.EXPO_PUBLIC_ASSISTANT_URL?.trim().replace(/\/+$/, '') ||
   (Platform.OS === 'android' ? 'http://10.0.2.2:3001' : 'http://localhost:3001');
@@ -17,6 +17,7 @@ const opening: ChatMessage = {
   content: 'Привет! Помогу придумать, чем заняться после пар. Сколько у тебя времени и какой бюджет?',
 };
 const WIDGET_SIZE = 54;
+const MAX_LIFT = 110;
 const quickMessages = ['Есть пара часов', 'Подскажи, куда сходить'];
 
 function clampPosition(value: number, width: number) {
@@ -25,16 +26,36 @@ function clampPosition(value: number, width: number) {
 
 function createDockMotion() {
   const position = new Animated.Value(0);
+  const lift = new Animated.Value(0);
+  const held = new Animated.Value(0);
   let width = 0;
   let current = 0;
   let start = 0;
   let pendingDelta = 0;
+  let pendingLift = 0;
+  let startLift = 0;
   let measured = false;
   let pointerStartX = 0;
   let pointerStartPosition = 0;
+  let pointerStartY = 0;
+  let pointerStartLift = 0;
   let dragging = false;
   let suppressPress = false;
   let captureElement: HTMLElement | null = null;
+
+  function press(active: boolean) {
+    Animated.spring(held, { toValue: active ? 1 : 0, speed: 25, bounciness: 0, useNativeDriver: true }).start();
+  }
+
+  function moveLift(value: number) {
+    lift.setValue(Math.max(-MAX_LIFT, Math.min(0, value)));
+  }
+
+  function release() {
+    dragging = false;
+    press(false);
+    Animated.spring(lift, { toValue: 0, speed: 12, bounciness: 4, useNativeDriver: true }).start();
+  }
 
   function settleAt(value: number) {
     current = clampPosition(value, width);
@@ -42,27 +63,31 @@ function createDockMotion() {
   }
 
   const shouldMove = (dx: number, dy: number) => {
-    const moving = Math.abs(dx) > 5 && Math.abs(dx) > Math.abs(dy);
-    if (moving) pendingDelta = dx;
+    const moving = Math.hypot(dx, dy) > 5;
+    if (moving) { pendingDelta = dx; pendingLift = dy; }
     return moving;
   };
   const responder = PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gesture) => shouldMove(gesture.dx, gesture.dy),
     onMoveShouldSetPanResponderCapture: (_event, gesture) => shouldMove(gesture.dx, gesture.dy),
     onPanResponderGrant: () => {
+      dragging = true;
+      press(true);
       position.stopAnimation(value => {
         start = clampPosition(value + pendingDelta, width);
         current = start;
         pendingDelta = 0;
         position.setValue(start);
       });
+      lift.stopAnimation(value => { startLift = Math.max(-MAX_LIFT, Math.min(0, value + pendingLift)); pendingLift = 0; moveLift(startLift); });
     },
     onPanResponderMove: (_event, gesture) => {
       current = clampPosition(start + gesture.dx, width);
       position.setValue(current);
+      moveLift(startLift + gesture.dy);
     },
-    onPanResponderRelease: (_event, gesture) => settleAt(current + gesture.vx * 70),
-    onPanResponderTerminate: () => settleAt(current),
+    onPanResponderRelease: (_event, gesture) => { settleAt(current + gesture.vx * 70); release(); },
+    onPanResponderTerminate: () => { settleAt(current); release(); },
   });
 
   function measure(nextWidth: number) {
@@ -82,17 +107,22 @@ function createDockMotion() {
       suppressPress = false;
       dragging = false;
       pointerStartX = event.clientX;
+      pointerStartY = event.clientY;
       position.stopAnimation(value => { pointerStartPosition = value; });
+      lift.stopAnimation(value => { pointerStartLift = value; });
+      press(true);
       captureElement = event.currentTarget.querySelector('[role="button"]');
       captureElement?.setPointerCapture(event.pointerId);
     },
     onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
       if (!captureElement?.hasPointerCapture(event.pointerId)) return;
       const delta = event.clientX - pointerStartX;
-      if (Math.abs(delta) > 5) dragging = true;
+      const verticalDelta = event.clientY - pointerStartY;
+      if (Math.hypot(delta, verticalDelta) > 5) dragging = true;
       if (!dragging) return;
       current = clampPosition(pointerStartPosition + delta, width);
       position.setValue(current);
+      moveLift(pointerStartLift + verticalDelta);
     },
     onPointerUp: (event: ReactPointerEvent<HTMLElement>) => {
       if (!captureElement?.hasPointerCapture(event.pointerId)) return;
@@ -102,15 +132,20 @@ function createDockMotion() {
         suppressPress = true;
         settleAt(current);
       }
+      release();
     },
-    onPointerCancel: () => { if (dragging) settleAt(current); dragging = false; },
+    onPointerCancel: () => { if (dragging) settleAt(current); captureElement = null; release(); },
   } as unknown as ViewProps;
 
   return {
     position,
+    lift,
+    held,
     panHandlers: Platform.OS === 'web' ? webHandlers : responder.panHandlers,
     measure,
     consumeDrag: () => { const wasDrag = suppressPress; suppressPress = false; return wasDrag; },
+    press,
+    releasePressIfIdle: () => { if (!dragging) press(false); },
     moveBy: (delta: number) => settleAt(current + delta),
   };
 }
@@ -137,6 +172,7 @@ export function AssistantLauncher() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [catalogAvailable, setCatalogAvailable] = useState<boolean | null>(null);
   const listRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const [dock] = useState(createDockMotion);
 
@@ -151,7 +187,7 @@ export function AssistantLauncher() {
       .then(async response => {
         if (!response.ok) throw new Error('unavailable');
         const body = await response.json();
-        setStatus(body.configured && (body.mode === 'mock' || body.mode === 'gigachat') ? body.mode : 'unavailable');
+        setStatus(body.configured && body.mode === 'gigachat' ? 'gigachat' : 'unavailable');
       })
       .catch(() => { if (!controller.signal.aborted) setStatus('unavailable'); });
     return () => controller.abort();
@@ -177,8 +213,11 @@ export function AssistantLauncher() {
       const data = await response.json();
       if (!response.ok || typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('unavailable');
       setMessages(current => [...current, { role: 'assistant', content: data.reply }]);
-      if (data.mode === 'mock' || data.mode === 'gigachat') setStatus(data.mode);
+      if (data.mode === 'gigachat') setStatus(data.mode);
+      if (typeof data.catalogAvailable === 'boolean') setCatalogAvailable(data.catalogAvailable);
     } catch {
+      setMessages(current => current.slice(0, -1));
+      setDraft(message);
       setError('Не удалось связаться с помощником. Проверьте подключение и попробуйте ещё раз.');
     } finally {
       clearTimeout(timeout);
@@ -187,26 +226,31 @@ export function AssistantLauncher() {
   }
 
   const statusLabel = {
-    checking: 'Проверяем подключение', mock: 'Тестовый режим', gigachat: 'Режим GigaChat', unavailable: 'Нет подключения',
+    checking: 'Проверяем настройку', gigachat: 'GigaChat настроен', unavailable: 'Помощник недоступен',
   }[status];
 
   return (
     <>
       <View pointerEvents="box-none" onLayout={measureDock} style={[styles.dockZone, { bottom: Math.max(insets.bottom, 12) + 71 }]}>
-        <Animated.View {...dock.panHandlers} style={[styles.draggable, Platform.OS === 'web' && ({ touchAction: 'none' } as unknown as ViewStyle), { transform: [{ translateX: dock.position }] }]}>
+        <Animated.View {...dock.panHandlers} style={[styles.draggable, Platform.OS === 'web' && ({ touchAction: 'none', cursor: 'grab' } as unknown as ViewStyle), { transform: [{ translateX: dock.position }, { translateY: dock.lift }] }]}>
+          <Animated.View pointerEvents="none" style={[styles.grabHalo, { opacity: dock.held }]} />
+          <Animated.View style={{ transform: [{ scale: dock.held.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }] }}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Открыть помощника"
-            accessibilityHint="Нажмите, чтобы открыть чат, или перетащите вдоль нижней панели"
+            accessibilityHint="Нажмите, чтобы открыть чат, или удерживайте и перетащите помощника"
             accessibilityActions={[{ name: 'increment', label: 'Переместить вправо' }, { name: 'decrement', label: 'Переместить влево' }]}
             onAccessibilityAction={event => {
               if (event.nativeEvent.actionName === 'increment') dock.moveBy(48);
               if (event.nativeEvent.actionName === 'decrement') dock.moveBy(-48);
             }}
             onPress={() => { if (!dock.consumeDrag()) { setStatus('checking'); setOpen(true); } }}
+            onPressIn={() => dock.press(true)}
+            onPressOut={() => dock.releasePressIfIdle()}
             style={({ pressed }) => [styles.launcher, pressed && styles.pressed]}>
             <MascotIcon size={48} />
           </Pressable>
+          </Animated.View>
         </Animated.View>
       </View>
 
@@ -228,7 +272,8 @@ export function AssistantLauncher() {
               </View>
 
               <ScrollView ref={listRef} contentContainerStyle={styles.messages} onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled">
-                {status === 'mock' && <Text style={styles.notice}>Это демо: ответы подготовлены заранее, поиск мест пока не подключён.</Text>}
+                {catalogAvailable === false && <Text style={styles.notice}>Каталог мест сейчас недоступен, поэтому помощник не сможет предложить конкретные места.</Text>}
+                {catalogAvailable === true && <Text style={styles.notice}>Стоимость, время работы и длительность посещения нужно уточнить: в каталоге этих данных нет.</Text>}
                 {messages.map((item, index) => (
                   <View key={`${item.role}-${index}`} style={[styles.bubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
                     <Text style={[styles.bubbleText, item.role === 'user' && styles.userText]}>{item.content}</Text>
@@ -275,6 +320,7 @@ export function AssistantLauncher() {
 const styles = StyleSheet.create({
   dockZone: { position: 'absolute', alignSelf: 'center', width: '86%', maxWidth: 420, height: WIDGET_SIZE, zIndex: 20 },
   draggable: { position: 'absolute', left: 0, width: WIDGET_SIZE, height: WIDGET_SIZE },
+  grabHalo: { position: 'absolute', left: -7, top: -7, width: WIDGET_SIZE + 14, height: WIDGET_SIZE + 14, borderRadius: 24, backgroundColor: '#a3b370', opacity: 0.45 },
   launcher: { width: WIDGET_SIZE, height: WIDGET_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fdfbf0', borderRadius: 17, elevation: 6, shadowColor: '#1c2514', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   pressed: { opacity: 0.85 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', backgroundColor: 'rgba(22, 29, 17, 0.5)' },

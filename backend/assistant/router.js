@@ -1,11 +1,13 @@
 const express = require('express');
 const { AssistantError, createAssistantService } = require('./service');
+const { createCatalog } = require('./catalog');
 
 function createAssistantRouter(options = {}) {
   const service = options.service || createAssistantService({
-    mode: process.env.ASSISTANT_MODE || 'mock',
+    mode: process.env.ASSISTANT_MODE || 'gigachat',
     credentials: process.env.GIGACHAT_AUTH_KEY?.trim(),
     model: process.env.GIGACHAT_MODEL || 'GigaChat-2-Max',
+    catalog: createCatalog({ url: process.env.ASSISTANT_CATALOG_URL?.trim() }),
   });
   const router = express.Router();
 

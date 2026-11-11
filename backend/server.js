@@ -6,6 +6,9 @@ const express = require('express');
 const db = require('./db');
 const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
+const connections = require('./connections')(db, statistics.auth);
+const map = require('./map')(db, statistics.auth, statistics.optionalAuth);
+const path = require('node:path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +31,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json());
+app.use('/map-assets', express.static(path.join(__dirname, 'map-assets')));
+app.use('/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist')));
+app.use('/api/map', map.router);
 
 app.get('/', (_req, res) => {
   res.json({ message: 'Сервер работает!', endpoints: ['GET /api', ...endpoints] });
@@ -124,7 +130,9 @@ app.post('/login', async (req, res) => {
   });
 });
 
+app.post('/api/logout', statistics.auth, (req, _res, next) => { map.hide(req.account.id); next(); });
 app.use('/api', statistics.router);
+app.use('/api/connections', connections.router);
 // Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
 app.use('/api/admin', require('./admin')(db, statistics.auth));
 
@@ -154,12 +162,14 @@ function reportStartupError(error) {
 
 db.ready.then(async () => {
   await statistics.initialize();
-  app.listen(PORT, HOST, error => {
+  await connections.initialize();
+  await map.initialize();
+  const server = app.listen(PORT, HOST, error => {
     if (error) {
       reportStartupError(error);
       return;
     }
-    console.log(`API доступно по адресу http://${HOST}:${PORT}/api`);
+    console.log(`API доступно по адресу http://${HOST}:${server.address().port}/api`);
   });
 }).catch(reportStartupError);
 

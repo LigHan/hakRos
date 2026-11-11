@@ -13,6 +13,12 @@ module.exports = function createStatistics(db) {
   const all = (sql, params=[]) => new Promise((resolve,reject)=>db.all(sql,params,(e,r)=>e?reject(e):resolve(r)));
   const issue = user => { const token=crypto.randomBytes(32).toString('hex'); sessions.set(token,{...user, expires:Date.now()+12*60*60*1000}); return token; };
   const readToken = req => /^Bearer ([a-f0-9]{64})$/.exec(req.get('Authorization') || '')?.[1];
+  function optionalAuth(req, _res, next) {
+    const token=readToken(req), session=sessions.get(token);
+    if (session && session.expires > Date.now()) req.account=session;
+    else if (token) sessions.delete(token);
+    next();
+  }
   function auth(req,res,next) {
     const token=readToken(req), session=sessions.get(token);
     if (!session || session.expires <= Date.now()) { if(token) sessions.delete(token); return res.status(401).json({error:'Требуется вход в аккаунт'}); }
@@ -55,6 +61,6 @@ module.exports = function createStatistics(db) {
     }
   }
   // Админка использует ту же серверную проверку токена, что и статистика.
-  return {router,issue,initialize,auth};
+  return {router,issue,initialize,auth,optionalAuth};
 };
 

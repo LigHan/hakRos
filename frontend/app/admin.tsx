@@ -9,6 +9,7 @@ import { clearUserSession } from '@/lib/user-session';
 
 type Place = { id: string; place: string; bio: string | null; address: string | null; category: string | null };
 type Account = { id: number; email: string; name: string; surname: string | null; role: 'user' | 'company' };
+type MapPoint = { id: string; name: string; latitude: number; longitude: number; postId: string | null; reviewStatus: 'pending' | 'approved'; creatorName: string | null };
 type PlaceForm = { place: string; bio: string; address: string; category: string };
 type AccountForm = { email: string; name: string; surname: string };
 type Metric = 'card_view' | 'search' | 'search_no_results' | 'favorite_added' | 'like_added' | 'route_requested' | 'share_initiated';
@@ -33,6 +34,7 @@ export default function AdminPage() {
   const [section, setSection] = useState<Section>('overview');
   const [places, setPlaces] = useState<Place[]>([]);
   const [users, setUsers] = useState<Account[]>([]);
+  const [mapPlaces, setMapPlaces] = useState<MapPoint[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [query, setQuery] = useState('');
   const [placeId, setPlaceId] = useState<string | null>(null);
@@ -50,10 +52,10 @@ export default function AdminPage() {
     setError('');
     setNeedsLogin(false);
     try {
-      const [nextPlaces, nextUsers, nextStats]: [Place[], Account[], Stats] = await Promise.all([
-        authorized('/api/admin/places'), authorized('/api/admin/users'), authorized('/api/statistics'),
+      const [nextPlaces, nextUsers, nextStats, nextMapPlaces]: [Place[], Account[], Stats, MapPoint[]] = await Promise.all([
+        authorized('/api/admin/places'), authorized('/api/admin/users'), authorized('/api/statistics'), authorized('/api/admin/map-places'),
       ]);
-      setPlaces(nextPlaces); setUsers(nextUsers); setStats(nextStats);
+      setPlaces(nextPlaces); setUsers(nextUsers); setStats(nextStats); setMapPlaces(nextMapPlaces);
       return true;
     } catch (e) {
       setPlaces([]); setUsers([]); setStats(null);
@@ -81,6 +83,15 @@ export default function AdminPage() {
     await authorized('/api/logout', { method: 'POST' }).catch(() => {});
     await clearUserSession();
     router.replace('/login');
+  };
+  const reviewPoint = async (id: string, decision: 'approve' | 'reject') => {
+    if (saving) return;
+    setSaving(true); setError(''); setNotice('');
+    try {
+      await authorized(`/api/admin/map-places/${encodeURIComponent(id)}/review`, {method:'POST', body:JSON.stringify({decision})});
+      if (await load()) setNotice(decision === 'approve' ? 'Точка опубликована' : 'Точка возвращена автору');
+    } catch (e) { setNeedsLogin(e instanceof ApiError && e.status === 401); setError(e instanceof Error ? e.message : 'Не удалось проверить точку'); }
+    finally { setSaving(false); }
   };
   const select = (value: Section) => { setSection(value); setQuery(''); if (stats) setError(''); setNotice(''); setPlaceId(null); setUserId(null); };
   const matches = (value: string) => value.toLowerCase().includes(query.trim().toLowerCase());
@@ -127,15 +138,16 @@ export default function AdminPage() {
               <Text style={styles.label}>Категория</Text><View style={styles.chips}><Action label="Не указана" active={!placeForm.category} onPress={() => setPlaceForm({ ...placeForm, category: '' })} />{placeCategories.filter(c => c.id !== 'all').map(c => <Action key={c.id} label={c.name} active={placeForm.category === c.id} onPress={() => setPlaceForm({ ...placeForm, category: c.id })} />)}</View>
               {placeForm.category && !placeCategories.some(c => c.id === placeForm.category) ? <Text style={styles.muted}>Текущая категория: {placeForm.category}</Text> : null}
               <View style={styles.chips}><Action label={saving ? 'Сохранение…' : 'Сохранить'} active disabled={saving} onPress={() => void save()} /><Action label="Отмена" disabled={saving} onPress={() => setPlaceId(null)} /></View>
-            </View> : <><View style={styles.rowMain}><Text style={styles.bodyText}>{item.place}</Text><Text style={styles.muted}>{item.address || 'Адрес не указан'} · {placeCategories.find(c => c.id === item.category)?.name || item.category || 'Без категории'}</Text></View><Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setPlaceId(item.id); setPlaceForm({ place: item.place, bio: item.bio || '', address: item.address || '', category: item.category || '' }); }} /></>}
+            </View> : <><View style={styles.rowMain}><Text style={styles.bodyText}>{item.place}</Text><Text style={styles.muted}>{item.address || 'Адрес не указан'} · {placeCategories.find(c => c.id === item.category)?.name || item.category || 'Без категории'}</Text></View><Action label="Проверить на карте" onPress={() => router.push({ pathname: '/map', params: { focusType: 'post', focusId: item.id } })} /><Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setPlaceId(item.id); setPlaceForm({ place: item.place, bio: item.bio || '', address: item.address || '', category: item.category || '' }); }} /></>}
           </View>)}
           {section === 'users' && filteredUsers.map(item => <View key={item.id} style={styles.row}>
             {userId === item.id ? <View style={styles.form}>
               <Field label="Имя" value={userForm.name} onChange={value => setUserForm({ ...userForm, name: value })} /><Field label="Фамилия" value={userForm.surname} onChange={value => setUserForm({ ...userForm, surname: value })} /><Field label="Email" value={userForm.email} onChange={value => setUserForm({ ...userForm, email: value })} />
               <Text style={styles.muted}>Роль: {item.role === 'company' ? 'Компания' : 'Пользователь'}</Text><View style={styles.chips}><Action label={saving ? 'Сохранение…' : 'Сохранить'} active disabled={saving} onPress={() => void save()} /><Action label="Отмена" disabled={saving} onPress={() => setUserId(null)} /></View>
-            </View> : <><View style={styles.rowMain}><Text style={styles.bodyText}>{[item.name, item.surname].filter(Boolean).join(' ')}</Text><Text style={styles.muted}>{item.email}</Text></View><Text style={styles.role}>{item.role === 'company' ? 'Компания' : 'Пользователь'}</Text><Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setUserId(item.id); setUserForm({ email: item.email, name: item.name, surname: item.surname || '' }); }} /></>}
+            </View> : <><View style={styles.rowMain}><Text style={styles.bodyText}>{[item.name, item.surname].filter(Boolean).join(' ')}</Text><Text style={styles.muted}>{item.email}</Text></View><Text style={styles.role}>{item.role === 'company' ? 'Компания' : 'Пользователь'}</Text><Action label="Проверить на карте" onPress={() => router.push({ pathname: '/map', params: { focusType: 'user', focusId: String(item.id) } })} /><Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setUserId(item.id); setUserForm({ email: item.email, name: item.name, surname: item.surname || '' }); }} /></>}
           </View>)}
           {(section === 'places' ? filteredPlaces : filteredUsers).length === 0 ? <Text style={styles.empty}>Записей не найдено.</Text> : null}
+          {section === 'places' && <><Text style={[styles.heading, { marginTop: 24 }]}>Точки интереса на карте</Text><Text style={styles.muted}>На проверке и опубликованные точки</Text>{mapPlaces.filter(item => matches(item.name)).map(item => <View key={item.id} style={styles.row}><View style={styles.rowMain}><Text style={styles.bodyText}>{item.name}</Text><Text style={styles.muted}>{item.latitude.toFixed(5)}, {item.longitude.toFixed(5)} · {item.creatorName || 'Администратор'} · {item.reviewStatus === 'pending' ? 'На проверке' : 'Опубликовано'}</Text></View><Action label="Проверить на карте" onPress={() => router.push({ pathname: '/map', params: { focusType: 'point', focusId: item.id } })} />{item.reviewStatus === 'pending' && <><Action label="Одобрить" active disabled={saving} onPress={() => void reviewPoint(item.id,'approve')} /><Action label="Отклонить" disabled={saving} onPress={() => void reviewPoint(item.id,'reject')} /></>}</View>)}</>}
         </View>}
       </ScrollView>
     </View>

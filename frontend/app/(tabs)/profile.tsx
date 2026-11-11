@@ -12,7 +12,8 @@ import {
   View,
 } from 'react-native';
 
-import { authorized } from '@/lib/statistics';
+import { getConnections, type Connections } from '@/lib/connections';
+import { ApiError, authorized } from '@/lib/statistics';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
@@ -38,15 +39,21 @@ export default function ProfileScreen() {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connections, setConnections] = useState<Connections | null>(null);
+  const [connectionsError, setConnectionsError] = useState('');
 
   useFocusEffect(
     useCallback(() => {
+      const controller = new AbortController();
       const loadSessionAndData = async () => {
         console.log('🔍 Загрузка сессии и данных профиля...');
         setLoading(true);
         setError(null);
+        setConnections(null);
+        setConnectionsError('');
 
         const userSession = await getUserSession();
+        if (controller.signal.aborted) return;
 
         if (!userSession) {
           console.log('❌ Сессия не найдена, переход на логин');
@@ -65,19 +72,34 @@ export default function ProfileScreen() {
             console.log('✅ Посты загружены с бэкенда:', postsData.length);
           } catch (apiError) {
             console.warn('⚠️ Бэкенд недоступен, используем пустые данные:', apiError);
+            if (controller.signal.aborted) return;
             postsData = [];
             setError('Бэкенд временно недоступен. Некоторые данные могут быть недоступны.');
           }
 
+          if (controller.signal.aborted) return;
           setAllPosts(postsData);
 
-          // Загружаем лайки и избранное
-          const [liked, favorites, likedCount, favoriteCount] = await Promise.all([
+          const connectionsRequest = userSession.role === 'user'
+            ? getConnections(controller.signal).catch(cause => {
+              if (!controller.signal.aborted) {
+                setConnectionsError(cause instanceof ApiError && cause.status === 401
+                  ? 'Войдите снова, чтобы загрузить подписки.'
+                  : 'Не удалось загрузить подписки.');
+              }
+              return null;
+            })
+            : Promise.resolve(null);
+
+          const [liked, favorites, likedCount, favoriteCount, connectionsData] = await Promise.all([
             getLikedPosts(),
             getFavoritePosts(),
             getLikedPostsCount(),
-            getFavoritePostsCount()
+            getFavoritePostsCount(),
+            connectionsRequest,
           ]);
+          if (controller.signal.aborted) return;
+          setConnections(connectionsData);
 
           console.log('📊 Данные профиля загружены:', {
             liked: liked.length,
@@ -92,18 +114,21 @@ export default function ProfileScreen() {
           setFavoriteCount(favoriteCount);
         } catch (error) {
           console.error('❌ Ошибка загрузки данных профиля:', error);
-          setError('Ошибка загрузки данных');
+          if (!controller.signal.aborted) setError('Ошибка загрузки данных');
         } finally {
-          setLoading(false);
+          if (!controller.signal.aborted) setLoading(false);
         }
       };
 
-      loadSessionAndData();
+      void loadSessionAndData();
+      return () => controller.abort();
     }, [router])
   );
 
   const sessionHandle = session?.handle ?? '';
   const isCompany = session?.accountType === 'company';
+  const subscriptions = connections?.subscriptions ?? [];
+  const subscriptionCount = connections?.subscriptions.length;
 
   // Используем данные для получения постов
   const favorites = useMemo(
@@ -151,12 +176,10 @@ export default function ProfileScreen() {
       ];
     }
 
-    const followingCount = session?.following?.length ?? 0;
-
     return [
       { label: 'Избранное', value: formatNumber(favoriteCount) },
       { label: 'Понравилось', value: formatNumber(likedCount) },
-      { label: 'Отслеживает', value: formatNumber(followingCount) },
+      { label: 'Подписки', value: subscriptionCount === undefined ? '—' : formatNumber(subscriptionCount) },
     ];
   }, [
     companyFollowers,
@@ -165,7 +188,7 @@ export default function ProfileScreen() {
     favoriteCount,
     isCompany,
     likedCount,
-    session?.following?.length
+    subscriptionCount
   ]);
 
   const handleOpenCompany = (id: string) => {
@@ -184,6 +207,7 @@ export default function ProfileScreen() {
     await authorized('/api/logout', {method: 'POST'}).catch(() => {});
     await clearUserSession();
     setSession(null);
+    setConnections(null);
     setLikedPosts([]);
     setFavoritePosts([]);
     setAllPosts([]);
@@ -207,6 +231,21 @@ export default function ProfileScreen() {
       >
         {Platform.OS === 'web' && session.role === 'admin' && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/admin')} style={{ backgroundColor: '#0f172a', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Панель администратора</Text></TouchableOpacity>}
         <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/statistics')} style={{ backgroundColor: '#2563eb', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Открыть статистику</Text></TouchableOpacity>
+        {session.role === 'user' && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Друзья"
+            style={styles.friendsLink}
+            onPress={() => router.push('/connections')}
+          >
+            <Ionicons name="people-outline" size={22} color="#2563eb" />
+            <Text style={styles.friendsLinkLabel}>Друзья</Text>
+            {!!connections?.incomingRequests.length && (
+              <Text style={styles.friendsLinkLabel}>{connections.incomingRequests.length}</Text>
+            )}
+            <Ionicons name="chevron-forward" size={18} color="#2563eb" />
+          </TouchableOpacity>
+        )}
         {error && (
           <View style={styles.errorBanner}>
             <Ionicons name="warning-outline" size={20} color="#f59e0b" />
@@ -356,38 +395,38 @@ export default function ProfileScreen() {
               ) : null}
             </ProfileSection>
 
-            <ProfileSection
-              title="Отслеживаемые места"
-              subtitle={`${session.following?.length || 0} подписок`}
-              emptyText="Подписывайтесь на места, чтобы следить за обновлениями."
-              isEmpty={!session.following || session.following.length === 0}
-            >
-              {session.following && session.following.length > 0 ? (
-                <View style={styles.followingList}>
-                  {session.following.map(place => (
-                    <TouchableOpacity
-                      key={place.id}
-                      style={styles.followingCard}
-                      activeOpacity={0.85}
-                      onPress={() => handleOpenCompany(place.id)}
-                    >
-                      <Image
-                        source={{ uri: place.avatar || 'https://images.unsplash.com/photo-1560472354-b33ff0c44a43?auto=format&fit=crop&w=400&q=80' }}
-                        style={styles.followingAvatar}
-                      />
-                      <View style={styles.followingInfo}>
-                        <Text style={styles.followingName}>{place.name}</Text>
-                        <Text style={styles.followingHandle}>@{place.handle}</Text>
-                        <Text style={styles.followingDescription} numberOfLines={2}>
-                          {place.description || 'Интересное место для посещения'}
-                        </Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
-            </ProfileSection>
+            {session.role === 'user' && (
+              <ProfileSection
+                title="Подписки на заведения"
+                subtitle={connections ? `Всего ${subscriptions.length}` : ''}
+                emptyText={connectionsError || 'Подписывайтесь на заведения из их карточек.'}
+                isEmpty={subscriptions.length === 0}
+              >
+                {subscriptions.length > 0 && (
+                  <View style={styles.followingList}>
+                    {subscriptions.map(place => (
+                      <TouchableOpacity
+                        key={place.placeId}
+                        accessibilityRole="button"
+                        style={styles.followingCard}
+                        activeOpacity={0.85}
+                        onPress={() => handleOpenCompany(place.placeId)}
+                      >
+                        <Image source={{ uri: place.avatar }} style={styles.followingAvatar} />
+                        <View style={styles.followingInfo}>
+                          <Text style={styles.followingName}>{place.name}</Text>
+                          <Text style={styles.followingHandle}>@{place.handle}</Text>
+                          {place.description ? (
+                            <Text style={styles.followingDescription} numberOfLines={2}>{place.description}</Text>
+                          ) : null}
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </ProfileSection>
+            )}
           </>
         )}
       </ScrollView>
@@ -465,6 +504,17 @@ function ProfileSection({
 }
 
 const styles = StyleSheet.create({
+  friendsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#dbeafe',
+    marginBottom: 16,
+  },
+  friendsLinkLabel: { color: '#1d4ed8', fontWeight: '700' },
   container: {
     flex: 1,
     backgroundColor: '#f1f5f9',

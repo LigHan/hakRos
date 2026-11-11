@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Tabs, type BottomTabBarProps } from 'expo-router/js-tabs';
 import { useState, type ComponentProps } from 'react';
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getUserSession } from '@/lib/user-session';
 import { palette, useAppearance } from '@/lib/app-appearance';
@@ -76,10 +76,12 @@ function FloatingTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarP
         </View>
       </View>
       <Modal visible={isCreateOpen} animationType="slide" onRequestClose={() => setCreateOpen(false)}>
+        <View style={Platform.OS === 'web' ? styles.modalWebShell : styles.modalNativeShell}>
+        <View style={Platform.OS === 'web' ? styles.modalWebViewport : styles.modalNativeViewport}>
         <View style={styles.createScreen}>
           <View style={styles.createBlob} pointerEvents="none" />
           <View style={styles.hillLeft} pointerEvents="none" /><View style={styles.hillRight} pointerEvents="none" />
-          <ScrollView contentContainerStyle={[styles.createContent, { paddingTop: Math.max(insets.top, 20) }]}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.createContent, { paddingTop: Math.max(insets.top, 20) }]}>
             <View style={styles.createHeader}>
               <Pressable accessibilityRole="button" accessibilityLabel="Назад" onPress={() => setCreateOpen(false)} style={styles.backButton}><Ionicons name="arrow-back" size={25} color={palette.forest} /></Pressable>
               <Text style={styles.createTitle}>Создать</Text><View style={styles.backButton} />
@@ -90,11 +92,13 @@ function FloatingTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarP
             <Pressable accessibilityRole="button" style={[styles.choice, styles.postChoice, mode === 'sketch' && styles.choiceSketch]} onPress={() => choose('post')}><Ionicons name="image-outline" size={42} color={palette.olive} /><View style={styles.choiceText}><Text style={styles.choiceTitle}>Пост</Text><Text style={styles.choiceDescription}>Фото, описание и место</Text></View><Ionicons name="chevron-forward" size={21} color={palette.forest} /></Pressable>
             <Pressable accessibilityRole="button" style={[styles.choice, styles.storyChoice, mode === 'sketch' && styles.choiceSketch]} onPress={() => choose('story')}><Ionicons name="play-circle-outline" size={42} color={palette.terracotta} /><View style={styles.choiceText}><Text style={styles.choiceTitle}>История</Text><Text style={styles.choiceDescription}>Короткий момент — сейчас и здесь</Text></View><Ionicons name="chevron-forward" size={21} color={palette.forest} /></Pressable>
           </ScrollView>
-          <View style={[styles.modalBarContainer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+          <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}>
             <View style={[styles.bar, mode === 'sketch' && styles.barSketch]}>
               {leftTabs.map(renderTab)}<Pressable accessibilityRole="button" accessibilityLabel="Закрыть создание" onPress={() => setCreateOpen(false)} style={styles.createButton}><Ionicons name="add" size={30} color={palette.cream} /></Pressable>{rightTabs.map(renderTab)}
             </View>
           </View>
+        </View>
+        </View>
         </View>
       </Modal>
     </>
@@ -111,6 +115,10 @@ const styles = StyleSheet.create({
   label: { color: palette.forest, fontSize: 9 },
   labelSelected: { color: palette.olive, fontWeight: '700' },
   createButton: { width: 46, height: 46, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.terracotta, marginHorizontal: 2 },
+  modalWebShell: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 32, backgroundColor: palette.surface, minHeight: '100%' },
+  modalWebViewport: { width: 430, maxWidth: '100%', flex: 1, borderRadius: 32, overflow: 'hidden', backgroundColor: palette.surface, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 24, shadowOffset: { width: 0, height: 18 }, elevation: 12 },
+  modalNativeShell: { flex: 1 },
+  modalNativeViewport: { flex: 1 },
   createScreen: { flex: 1, width: '100%', maxWidth: 430, alignSelf: 'center', backgroundColor: palette.cream, overflow: 'hidden' },
   createBlob: { position: 'absolute', top: 130, right: -85, width: 195, height: 130, borderRadius: 100, backgroundColor: '#ECE7C1', transform: [{ rotate: '-25deg' }] },
   hillLeft: { position: 'absolute', left: -110, bottom: 40, width: 360, height: 115, borderRadius: 180, backgroundColor: '#DADAB1' },
@@ -129,5 +137,4 @@ const styles = StyleSheet.create({
   choiceText: { flex: 1, gap: 4 },
   choiceTitle: { color: palette.forest, fontSize: 20, fontWeight: '700' },
   choiceDescription: { color: palette.muted, fontSize: 13, lineHeight: 18 },
-  modalBarContainer: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', backgroundColor: palette.cream, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderTopWidth: 1, borderColor: palette.border },
 });

@@ -228,7 +228,7 @@ function SchedulePicker({ row, onApply, onCancel, onRemove }: {
                     <Text style={styles.hint}>{option.label}</Text>
                     <Text style={styles.timeText}>{timeLabel}</Text>
                   </View>
-                  <Ionicons name={boundary === option.key ? 'chevron-up' : 'chevron-down'} size={16} color="#2563eb" />
+                  <Ionicons name={boundary === option.key ? 'chevron-up' : 'chevron-down'} size={16} color="#606C38" />
                 </Pressable>
               );
             })}
@@ -291,7 +291,7 @@ export function PlaceHoursEditor({ rows, activeIndex, disabled, onEdit, onChange
               <Text style={styles.label}>{row.label}</Text>
               <Text style={styles.hint}>{row.value}</Text>
             </View>
-            <Ionicons name={activeIndex === index ? 'chevron-up' : 'chevron-down'} size={18} color="#2563eb" />
+            <Ionicons name={activeIndex === index ? 'chevron-up' : 'chevron-down'} size={18} color="#606C38" />
           </Pressable>
           {activeIndex === index && (
             <SchedulePicker
@@ -313,7 +313,7 @@ export function PlaceHoursEditor({ rows, activeIndex, disabled, onEdit, onChange
           onPress={() => onEdit(rows.length)}
           style={[styles.add, (disabled || activeIndex !== null || rows.length >= 30) && styles.disabled]}
         >
-          <Ionicons name="add" size={18} color="#1d4ed8" />
+          <Ionicons name="add" size={18} color="#283618" />
           <Text style={styles.shortcutText}>Добавить часы</Text>
         </Pressable>
       )}
@@ -322,45 +322,45 @@ export function PlaceHoursEditor({ rows, activeIndex, disabled, onEdit, onChange
 }
 
 const styles = StyleSheet.create({
-  section: { gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#e2e8f0', paddingTop: 14 },
-  title: { color: '#0f172a', fontSize: 18, fontWeight: '700' },
+  section: { gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#D9D6B5', paddingTop: 14 },
+  title: { color: '#283618', fontSize: 18, fontWeight: '700' },
   slot: { gap: 8 },
   summary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8,
     minHeight: 54, paddingHorizontal: 12, paddingVertical: 8,
-    borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, backgroundColor: '#f8fafc',
+    borderWidth: 1, borderColor: '#D9D6B5', borderRadius: 12, backgroundColor: '#FFFCED',
   },
   summaryText: { flexShrink: 1, gap: 2 },
-  label: { color: '#0f172a', fontSize: 14, fontWeight: '600' },
-  hint: { color: '#475569', fontSize: 13 },
-  picker: { padding: 12, gap: 10, borderRadius: 14, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#f8fafc' },
+  label: { color: '#283618', fontSize: 14, fontWeight: '600' },
+  hint: { color: '#6F7457', fontSize: 13 },
+  picker: { padding: 12, gap: 10, borderRadius: 14, borderWidth: 1, borderColor: '#F0ECD1', backgroundColor: '#FFFCED' },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   week: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   choice: {
     minHeight: optionHeight, minWidth: 36, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 7, borderRadius: 10, backgroundColor: '#eff3f8',
+    paddingHorizontal: 7, borderRadius: 10, backgroundColor: '#F0ECD1',
   },
   dayChoice: { minWidth: 34, paddingHorizontal: 5 },
-  choiceText: { color: '#0f172a', fontSize: 13, fontWeight: '600' },
-  selected: { backgroundColor: '#2563eb' },
+  choiceText: { color: '#283618', fontSize: 13, fontWeight: '600' },
+  selected: { backgroundColor: '#606C38' },
   selectedText: { color: '#ffffff' },
   shortcut: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 6 },
-  shortcutText: { color: '#1d4ed8', fontSize: 13, fontWeight: '700' },
+  shortcutText: { color: '#283618', fontSize: 13, fontWeight: '700' },
   removeText: { color: '#b42318', fontSize: 13, fontWeight: '600' },
   times: { flexDirection: 'row', gap: 8 },
   timeField: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: 4, padding: 8, borderWidth: 1, borderRadius: 10, borderColor: '#e2e8f0', backgroundColor: '#ffffff',
+    gap: 4, padding: 8, borderWidth: 1, borderRadius: 10, borderColor: '#D9D6B5', backgroundColor: '#FFFCED',
   },
-  activeField: { borderColor: '#2563eb' },
-  timeText: { color: '#0f172a', fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  activeField: { borderColor: '#606C38' },
+  timeText: { color: '#283618', fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   timeColumn: { flex: 1, gap: 4 },
-  timeList: { height: optionHeight * 3, borderWidth: 1, borderRadius: 10, borderColor: '#e2e8f0', backgroundColor: '#ffffff' },
+  timeList: { height: optionHeight * 3, borderWidth: 1, borderRadius: 10, borderColor: '#D9D6B5', backgroundColor: '#FFFCED' },
   add: {
     flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', minHeight: 44,
-    gap: 5, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#dbeafe',
+    gap: 5, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#F0ECD1',
   },
-  apply: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#2563eb' },
+  apply: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#606C38' },
   applyText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   disabled: { opacity: 0.55 },
 });

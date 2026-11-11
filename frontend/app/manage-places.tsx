@@ -88,7 +88,7 @@ function Field({ label, ...props }: TextInputProps & { label: string }) {
       <Text style={styles.label}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        placeholderTextColor="#64748b"
+        placeholderTextColor="#6F7457"
         {...props}
         style={[styles.input, props.multiline && styles.multiline]}
       />
@@ -217,15 +217,15 @@ export default function ManagePlacesScreen() {
       <Stack.Screen options={{
         title: draft ? (draft.id ? 'Редактирование заведения' : 'Новое заведение') : 'Мои заведения',
         headerBackTitle: 'Профиль',
-        headerStyle: { backgroundColor: '#ffffff' },
-        headerTintColor: '#0f172a',
+        headerStyle: { backgroundColor: '#FEFAE0' },
+        headerTintColor: '#283618',
         headerShadowVisible: false,
       }} />
       <ScrollView key={draft?.requestId ?? 'list'} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {error && (!draft || needsLogin) ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {needsLogin && <Action title="Войти" onPress={() => router.push('/login')} />}
         {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-        {loading && <ActivityIndicator accessibilityLabel="Загрузка заведений" color="#2563eb" />}
+        {loading && <ActivityIndicator accessibilityLabel="Загрузка заведений" color="#606C38" />}
         {!loading && !places && !needsLogin && <Action title="Повторить" onPress={() => void load(activeRequest.current?.signal)} secondary />}
 
         {places && !needsLogin && (draft ? (
@@ -313,27 +313,27 @@ export default function ManagePlacesScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f1f5f9' },
+  screen: { flex: 1, backgroundColor: '#FFFCED' },
   content: { padding: 20, paddingBottom: 40, gap: 16 },
-  card: { borderRadius: 24, backgroundColor: '#ffffff', padding: 20, gap: 14 },
-  title: { color: '#0f172a', fontSize: 18, fontWeight: '700' },
-  detail: { color: '#64748b', fontSize: 14 },
+  card: { borderRadius: 24, backgroundColor: '#FFFCED', padding: 20, gap: 14 },
+  title: { color: '#283618', fontSize: 18, fontWeight: '700' },
+  detail: { color: '#6F7457', fontSize: 14 },
   notice: { color: '#166534', fontSize: 14 },
   error: { color: '#b42318', fontSize: 14 },
   field: { gap: 6 },
-  label: { color: '#0f172a', fontSize: 14, fontWeight: '600' },
+  label: { color: '#283618', fontSize: 14, fontWeight: '600' },
   input: {
     minHeight: 44,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#D9D6B5',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    color: '#0f172a',
-    backgroundColor: '#f8fafc',
+    color: '#283618',
+    backgroundColor: '#FFFCED',
   },
   multiline: { minHeight: 92, textAlignVertical: 'top' },
-  photo: { width: '100%', height: 160, borderRadius: 12, backgroundColor: '#f1f5f9' },
+  photo: { width: '100%', height: 160, borderRadius: 12, backgroundColor: '#FFFCED' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   action: {
     alignSelf: 'flex-start',
@@ -341,14 +341,14 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 14,
     borderRadius: 12,
-    backgroundColor: '#2563eb',
+    backgroundColor: '#606C38',
   },
   actionText: { color: '#ffffff', fontWeight: '700' },
-  secondaryAction: { backgroundColor: '#dbeafe' },
-  secondaryText: { color: '#1d4ed8' },
+  secondaryAction: { backgroundColor: '#F0ECD1' },
+  secondaryText: { color: '#283618' },
   disabled: { opacity: 0.55 },
-  chip: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#f1f5f9' },
-  chipText: { color: '#0f172a', fontWeight: '600' },
-  selectedChip: { backgroundColor: '#2563eb' },
+  chip: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#FFFCED' },
+  chipText: { color: '#283618', fontWeight: '600' },
+  selectedChip: { backgroundColor: '#606C38' },
   selectedChipText: { color: '#ffffff' },
 });

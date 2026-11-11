@@ -174,8 +174,8 @@ export default function MapScreen() {
   return <View style={styles.root}>
     <View style={styles.map}><MapCanvas state={{ places, people, selected, center }} onSelect={select} onError={canvasError} onSubmit={submitPoint} /></View>
     <View pointerEvents="box-none" style={styles.overlay}>
-      <View style={styles.header}><Ionicons name="map" size={20} color="#2563eb" /><Text style={styles.title}>Карта города</Text><TouchableOpacity accessibilityLabel="Моё местоположение" onPress={() => void locate()}><Ionicons name="locate" size={23} color="#2563eb" /></TouchableOpacity></View>
-      <View style={styles.search}><TextInput accessibilityLabel="Поиск места на карте" placeholder="Поиск среди добавленных мест" value={query} onChangeText={setQuery} onSubmitEditing={search} style={styles.input} /><TouchableOpacity onPress={search}><Ionicons name="search" size={22} color="#2563eb" /></TouchableOpacity></View>
+      <View style={styles.header}><Ionicons name="map" size={20} color="#606C38" /><Text style={styles.title}>Карта города</Text><TouchableOpacity accessibilityLabel="Моё местоположение" onPress={() => void locate()}><Ionicons name="locate" size={23} color="#606C38" /></TouchableOpacity></View>
+      <View style={styles.search}><TextInput accessibilityLabel="Поиск места на карте" placeholder="Поиск среди добавленных мест" value={query} onChangeText={setQuery} onSubmitEditing={search} style={styles.input} /><TouchableOpacity onPress={search}><Ionicons name="search" size={22} color="#606C38" /></TouchableOpacity></View>
       {(error || notice) ? <TouchableOpacity onPress={() => { setError(''); setNotice(''); }} style={styles.message}><Text style={error ? styles.error : styles.hint}>{error || notice}  ×</Text></TouchableOpacity> : null}
       <ScrollView style={styles.panel} keyboardShouldPersistTaps="handled">
         <View style={styles.actions}>
@@ -194,13 +194,13 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#eaf1fa' }, map: { ...StyleSheet.absoluteFill },
+  root: { flex: 1, backgroundColor: '#FEFAE0' }, map: { ...StyleSheet.absoluteFill },
   overlay: { ...StyleSheet.absoluteFill, padding: 16, paddingTop: Platform.OS === 'web' ? 16 : 48, paddingBottom: 100, justifyContent: 'flex-start' },
-  header: { backgroundColor: '#fff', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, title: { color: '#0f172a', fontWeight: '700', fontSize: 18, flex: 1 },
-  search: { marginTop: 8, backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }, input: { flex: 1, paddingVertical: 13, color: '#0f172a' },
-  message: { marginTop: 8, backgroundColor: '#fff', padding: 10, borderRadius: 12 }, error: { color: '#b42318', fontSize: 13 },
-  panel: { flexGrow: 0, marginTop: 'auto', backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 18, padding: 14, maxHeight: '45%' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  primary: { backgroundColor: '#2563eb', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 }, primaryText: { color: 'white', fontWeight: '700', textAlign: 'center' },
-  secondary: { backgroundColor: '#eaf1ff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 }, secondaryText: { color: '#1d4ed8', fontWeight: '600' },
-  form: { gap: 8, marginTop: 10 }, friendRow: { gap: 3, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' }, field: { borderWidth: 1, borderColor: '#cbd5e1', padding: 10, borderRadius: 10, color: '#0f172a' }, hint: { color: '#64748b', fontSize: 12, lineHeight: 18, marginTop: 8 }, link: { color: '#2563eb', marginTop: 8, fontSize: 13 },
+  header: { backgroundColor: '#FFFCED', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, title: { color: '#283618', fontWeight: '700', fontSize: 18, flex: 1 },
+  search: { marginTop: 8, backgroundColor: '#FFFCED', borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }, input: { flex: 1, paddingVertical: 13, color: '#283618' },
+  message: { marginTop: 8, backgroundColor: '#FFFCED', padding: 10, borderRadius: 12 }, error: { color: '#b42318', fontSize: 13 },
+  panel: { flexGrow: 0, marginTop: 'auto', backgroundColor: 'rgba(254,250,224,0.96)', borderRadius: 18, padding: 14, maxHeight: '45%' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  primary: { backgroundColor: '#606C38', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 }, primaryText: { color: 'white', fontWeight: '700', textAlign: 'center' },
+  secondary: { backgroundColor: '#F0ECD1', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 }, secondaryText: { color: '#283618', fontWeight: '600' },
+  form: { gap: 8, marginTop: 10 }, friendRow: { gap: 3, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#D9D6B5' }, field: { borderWidth: 1, borderColor: '#D9D6B5', padding: 10, borderRadius: 10, color: '#283618' }, hint: { color: '#6F7457', fontSize: 12, lineHeight: 18, marginTop: 8 }, link: { color: '#606C38', marginTop: 8, fontSize: 13 },
 });

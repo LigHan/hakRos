@@ -1,11 +1,14 @@
+import { authorized, track } from '@/lib/statistics';
+import { getUserSession } from '@/lib/user-session';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   FlatList,
   GestureResponderEvent,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -40,6 +43,38 @@ export default function FeedScreen() {
   const [postLikes, setPostLikes] = useState<Record<string, boolean>>({});
   const [postFavorites, setPostFavorites] = useState<Record<string, boolean>>({});
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
+  const [isWebAdmin, setWebAdmin] = useState(false);
+  const [moderationError, setModerationError] = useState('');
+  const [moderating, setModerating] = useState(false);
+
+  // Кнопки модерации доступны только в вебе; сервер повторно проверяет роль на каждом запросе.
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    if (Platform.OS === 'web') void getUserSession().then(session => { if (active) setWebAdmin(session?.role === 'admin'); });
+    return () => { active = false; };
+  }, []));
+
+  const deletePlace = async (id: string) => {
+    if (moderating || !window.confirm('Удалить публикацию и связанные с ней отзывы и истории?')) return;
+    setModerating(true); setModerationError('');
+    try {
+      await authorized(`/api/admin/places/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setPosts(items => items.filter(item => item.id !== id));
+      setStories(items => items.filter(item => item.postId !== id));
+    } catch (error) { setModerationError(error instanceof Error ? error.message : 'Не удалось удалить публикацию'); }
+    finally { setModerating(false); }
+  };
+
+  const deleteReview = async (id: string) => {
+    if (moderating || !window.confirm('Удалить этот отзыв?')) return;
+    setModerating(true); setModerationError('');
+    try {
+      await authorized(`/api/admin/reviews/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setPosts(items => items.map(item => ({ ...item, reviews: item.reviews.filter(review => review.id !== id) })));
+      setReviewsPost(item => item ? { ...item, reviews: item.reviews.filter(review => review.id !== id) } : item);
+    } catch (error) { setModerationError(error instanceof Error ? error.message : 'Не удалось удалить отзыв'); }
+    finally { setModerating(false); }
+  };
 
   const loadData = useCallback(() => {
     return Promise.all([databaseService.getPosts(), databaseService.getStories()])
@@ -51,9 +86,8 @@ export default function FeedScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  // Обновляем ленту после возвращения из админки или карточки с удалёнными данными.
+  useFocusEffect(useCallback(() => { void loadData(); }, [loadData]));
 
   // Загружаем состояния лайков и избранного
   useEffect(() => {
@@ -156,6 +190,7 @@ export default function FeedScreen() {
   };
 
   const handleBuildRoute = (post: Post) => {
+    track('route_requested', post.id);
     router.push('/map');
     triggerMapRoute(post.address);
   };
@@ -212,6 +247,7 @@ export default function FeedScreen() {
   };
 
   const handleOpenDetail = (post: Post) => {
+    track('card_view', post.id);
     setDetailPost(post);
     setDetailVisible(true);
   };
@@ -309,6 +345,7 @@ export default function FeedScreen() {
         }}
         ListHeaderComponent={
           <View style={styles.storiesSection}>
+            {moderationError ? <Text accessibilityRole="alert" style={{ color: '#b42318', padding: 12 }}>{moderationError}</Text> : null}
             <Text style={styles.storiesTitle}>Новинки</Text>
             <FlatList
               data={stories}
@@ -370,6 +407,7 @@ export default function FeedScreen() {
                 </TouchableOpacity>
               </View>
               <Text style={styles.userCaption}>от {item.user}</Text>
+              {isWebAdmin && <TouchableOpacity accessibilityRole="button" disabled={moderating} onPress={(event: GestureResponderEvent) => { event.stopPropagation(); void deletePlace(item.id); }}><Text style={{ color: '#b42318', marginVertical: 8 }}>Удалить публикацию</Text></TouchableOpacity>}
 
               {/* ИСПРАВЛЕННЫЙ БЛОК АДРЕСА */}
               <TouchableOpacity
@@ -521,6 +559,7 @@ export default function FeedScreen() {
               )}
             </View>
             <Text style={styles.modalSubtitle}>Что говорят посетители</Text>
+            {moderationError ? <Text accessibilityRole="alert" style={{ color: '#b42318' }}>{moderationError}</Text> : null}
             <View style={styles.reviewsList}>
               {reviewsPost?.reviews.map(review => (
                 <View key={review.id} style={styles.reviewItem}>
@@ -533,6 +572,7 @@ export default function FeedScreen() {
                   </View>
                   <Text style={styles.reviewComment}>{review.comment}</Text>
                   <Text style={styles.reviewDate}>{review.date}</Text>
+                  {isWebAdmin && <TouchableOpacity accessibilityRole="button" disabled={moderating} onPress={() => void deleteReview(review.id)}><Text style={{ color: '#b42318', marginTop: 8 }}>Удалить отзыв</Text></TouchableOpacity>}
                 </View>
               ))}
             </View>
@@ -1330,3 +1370,4 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 });
+

@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 
+import { authorized } from '@/lib/statistics';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
@@ -52,7 +54,7 @@ export default function ProfileScreen() {
           return;
         }
 
-        console.log('✅ Сессия загружена:', userSession);
+
         setSession(userSession);
 
         try {
@@ -179,6 +181,7 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
+    await authorized('/api/logout', {method: 'POST'}).catch(() => {});
     await clearUserSession();
     setSession(null);
     setLikedPosts([]);
@@ -202,6 +205,8 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {Platform.OS === 'web' && session.role === 'admin' && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/admin')} style={{ backgroundColor: '#0f172a', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Панель администратора</Text></TouchableOpacity>}
+        <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/statistics')} style={{ backgroundColor: '#2563eb', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Открыть статистику</Text></TouchableOpacity>
         {error && (
           <View style={styles.errorBanner}>
             <Ionicons name="warning-outline" size={20} color="#f59e0b" />
@@ -798,3 +803,4 @@ const styles = StyleSheet.create({
 function formatNumber(value: number): string {
   return formatCompactNumber(value);
 }
+

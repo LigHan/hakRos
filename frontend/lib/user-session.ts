@@ -5,7 +5,8 @@ export interface UserSession {
   email: string;
   name: string;
   surname: string | null;
-  role: 'user' | 'company';
+  role: 'user' | 'company' | 'admin';
+  token: string;
   handle: string;
   avatar: string;
   accountType: 'user' | 'company';
@@ -89,3 +90,4 @@ export async function clearUserSessionOnly(): Promise<void> {
     throw error;
   }
 }
+

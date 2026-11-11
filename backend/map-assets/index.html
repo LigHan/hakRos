@@ -6,6 +6,7 @@
   <link rel="stylesheet" href="/maplibre/maplibre-gl.css">
   <script src="/maplibre/maplibre-gl.js"></script>
   <script src="/map-assets/boundary-clip.js"></script>
+  <script src="/map-assets/russian-labels.js"></script>
   <style>
     html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#eaf1fa}
     #status{position:absolute;top:12px;left:12px;right:12px;background:white;color:#334155;padding:10px;border-radius:10px;z-index:2;display:none}
@@ -118,16 +119,6 @@
     const [response, maskResponse, promotionResponse] = await Promise.all([fetch('/map-assets/regions-ru.json'), fetch('/map-assets/border-mask.json'), fetch('/map-assets/promotion-mask.json')]);
     if (!response.ok || !maskResponse.ok || !promotionResponse.ok) throw new Error('Не удалось загрузить границы регионов');
     const [regions, borderMask, promotionMask] = await Promise.all([response.json(), maskResponse.json(), promotionResponse.json()]);
-    // Ограничиваем изменение стилем карты: исходные данные OSM и поиск не меняются.
-    for (const layer of map.getStyle().layers) {
-      if (layer.type !== 'symbol') continue;
-      const originalText = map.getLayoutProperty(layer.id, 'text-field');
-      if (!originalText || !JSON.stringify(originalText).includes('name:nonlatin')) continue;
-      // В тайлах нет перевода части названий: в таком случае используем английский
-      // или латинский вариант, а при отсутствии обоих не выводим исходную подпись.
-      map.setLayoutProperty(layer.id, 'text-field', ['case', ['within', regions.mask],
-        ['coalesce', ['get', 'name:ru'], ['get', 'name:en'], ['get', 'name:latin'], ''], originalText]);
-    }
     const baseBorder = map.getStyle().layers.find(layer => layer.id === 'boundary_2');
     const baseRegional = map.getStyle().layers.find(layer => layer.id === 'boundary_3');
     const baseDisputed = map.getStyle().layers.find(layer => layer.id === 'boundary_disputed');
@@ -198,7 +189,15 @@
   try {
     if (!window.maplibregl) throw new Error('Не удалось загрузить библиотеку карты');
     map = new maplibregl.Map({
-      container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[37.8026,48.0158], zoom:12,
+      container:'map', center:[37.8026,48.0158], zoom:12,
+      locale:{
+        'Map.Title':'Карта города',
+        'Marker.Title':'Точка на карте',
+        'Popup.Close':'Закрыть',
+        'NavigationControl.ZoomIn':'Увеличить масштаб',
+        'NavigationControl.ZoomOut':'Уменьшить масштаб',
+        'AttributionControl.ToggleAttribution':'Источники данных карты',
+      },
       attributionControl:{customAttribution:[
         '<a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>',
         '<a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">Маршруты OSRM · FOSSGIS</a>',
@@ -207,7 +206,6 @@
     });
     map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
     map.on('load', async () => {
-      // Сохраняем структуру и подписи поставщика, меняя цвета основных слоёв.
       for (const layer of map.getStyle().layers) {
         const id = layer.id.toLowerCase();
         try {
@@ -233,7 +231,16 @@
       if (event.originalEvent.target instanceof Element && event.originalEvent.target.closest('.pin')) return;
       notify({type:'click', latitude:event.lngLat.lat, longitude:event.lngLat.lng});
     });
-    map.on('error', event => { if (!ready) error('Не удалось загрузить карту: ' + String(event.error?.message || 'неизвестная ошибка')); });
+    map.on('error', () => { if (!ready) error('Не удалось загрузить карту. Проверьте соединение.'); });
+    map.setStyle('https://tiles.openfreemap.org/styles/liberty', {
+      transformStyle: (_previous, style) => ({
+        ...style,
+        layers: style.layers.map(layer => {
+          if (layer.type !== 'symbol' || !RussianMapLabels.usesName(layer.layout?.['text-field'])) return layer;
+          return { ...layer, layout:{ ...layer.layout, 'text-field':RussianMapLabels.textField() } };
+        }),
+      }),
+    });
     setTimeout(() => { if (!ready) error('Карта не загрузилась. Проверьте интернет и попробуйте обновить страницу.'); }, 15000);
   } catch (_) { error('Не удалось загрузить карту. Проверьте интернет и попробуйте снова.'); }
 </script></body></html>

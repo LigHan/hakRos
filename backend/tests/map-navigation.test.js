@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const test = require('node:test');
 const express = require('express');
+const { default: Pbf } = require('pbf');
+const { createRussianNameLookup } = require('../map-russian-names');
 const { createMapNavigationRouter } = require('../map-navigation');
 
 async function listen(t, app) {
@@ -19,6 +21,7 @@ async function navigationApi(t, provider) {
   app.use(express.json());
   app.use('/api/map', createMapNavigationRouter({
     geocoderUrl: upstream + '/api/',
+    namesForPoint: createRussianNameLookup({ tileJsonUrl: upstream + '/planet' }),
     walkingUrl: upstream + '/walk/route/v1/driving/',
     drivingUrl: upstream + '/drive/route/v1/driving/',
   }));
@@ -28,18 +31,53 @@ async function navigationApi(t, provider) {
 function house(street, number, longitude = 37.81) {
   return {
     geometry: { type: 'Point', coordinates: [longitude, 48.03] },
-    properties: { type: 'house', street, housenumber: number, city: 'Донецьк' },
+    properties: { type: 'house', street, housenumber: number, city: 'Донецьк', district: 'Київський район' },
   };
 }
 
-test('ищет дом по варианту написания улицы и отбрасывает совпадение только по номеру', async t => {
+function namesTile() {
+  const tile = new Pbf();
+  const layers = [
+    { name: 'transportation_name', labels: [['Іоніна вулиця', 'Ионина улица']] },
+    { name: 'place', labels: [['Донецьк', 'Донецк'], ['Київський район', 'Киевский район']] },
+  ];
+  for (const layer of layers) {
+    tile.writeMessage(3, ({ name, labels }, writer) => {
+      writer.writeStringField(1, name);
+      writer.writeStringField(3, 'name');
+      writer.writeStringField(3, 'name:ru');
+      for (const [index, names] of labels.entries()) {
+        for (const value of names) writer.writeMessage(4, (text, pbf) => pbf.writeStringField(1, text), value);
+        writer.writeMessage(2, (tags, pbf) => {
+          pbf.writePackedVarint(2, tags);
+          pbf.writeVarintField(3, 1);
+          pbf.writePackedVarint(4, [9, 0, 0]);
+        }, [0, index * 2, 1, index * 2 + 1]);
+      }
+      writer.writeVarintField(5, 4096);
+      writer.writeVarintField(15, 2);
+    }, layer);
+  }
+  return Buffer.from(tile.finish());
+}
+
+test('ищет точный дом и показывает русские названия из тайлов', async t => {
   const provider = express();
   const requests = [];
+  let tileRequests = 0;
   provider.get('/api/', (req, res) => {
     requests.push({ query: req.query.q, agent: req.get('User-Agent') });
+    if (req.query.q === 'садова 23') return res.json({ features: [house('Садова вулиця', '23')] });
     res.json({ features: req.query.q === 'іоніна 23'
       ? [house('Іоніна вулиця', '24', 37.82), house('Іоніна вулиця', '23'), house('Іоніна вулиця', '23')]
       : [house('ул Снежная', '23')] });
+  });
+  provider.get('/planet', (req, res) => {
+    res.json({ maxzoom: 14, tiles: ['http://' + req.get('host') + '/tiles/{z}/{x}/{y}.pbf'] });
+  });
+  provider.get('/tiles/:zoom/:x/:y.pbf', (_req, res) => {
+    tileRequests++;
+    res.send(namesTile());
   });
   const base = await navigationApi(t, provider);
   const query = '/search?q=' + encodeURIComponent('ул. Ионина, 23');
@@ -49,12 +87,22 @@ test('ищет дом по варианту написания улицы и о�
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   const results = await response.json();
-  assert.deepEqual(results.map(({ title, latitude, longitude }) => ({ title, latitude, longitude })),
-    [{ title: 'Іоніна вулиця, 23', latitude: 48.03, longitude: 37.81 }]);
+  assert.deepEqual(results, [{
+    id: '37.81,48.03',
+    title: 'улица Ионина, 23',
+    subtitle: 'Донецк, Киевский район',
+    latitude: 48.03,
+    longitude: 37.81,
+  }]);
   assert.deepEqual(requests.map(request => request.query), ['ионина 23', 'іоніна 23']);
   assert(requests.every(request => request.agent.includes('github.com/LigHan/hakRos')));
   assert.deepEqual(await fetch(base + '/search?q=' + encodeURIComponent('Ионина 23')).then(res => res.json()), results);
   assert.equal(requests.length, 2);
+
+  const unlabelled = await fetch(base + '/search?q=' + encodeURIComponent('Садова 23')).then(res => res.json());
+  assert.equal(unlabelled[0].title, 'Дом №23');
+  assert.equal(unlabelled[0].subtitle, 'Донецк, Киевский район, 48.03000, 37.81000');
+  assert.equal(tileRequests, 1);
 });
 
 test('передаёт точки в правильный профиль OSRM и возвращает линию маршрута', async t => {

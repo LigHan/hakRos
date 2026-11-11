@@ -2,6 +2,8 @@
 
 const { setTimeout: delay } = require('node:timers/promises');
 const express = require('express');
+const { readRussianLabel } = require('./map-assets/russian-labels');
+const { createRussianNameLookup } = require('./map-russian-names');
 
 const defaultGeocoder = 'https://photon.komoot.io/api/';
 const defaultRouter = 'https://routing.openstreetmap.de';
@@ -87,7 +89,7 @@ function addressMatches(place, query) {
     (!house && word.length >= 3 && [...words].some(candidate => candidate.startsWith(word))));
 }
 
-function addressResults(features, query) {
+function addressCandidates(features, query) {
   const results = new Map();
   for (const feature of features) {
     const place = feature?.properties;
@@ -96,17 +98,35 @@ function addressResults(features, query) {
     const [longitude, latitude] = feature.geometry.coordinates;
     if (!validCoordinates(latitude, longitude)) continue;
 
-    const streetAddress = [place.street, place.housenumber].filter(Boolean).join(', ');
-    const title = place.type === 'house' ? streetAddress || place.name : place.name || streetAddress;
-    if (typeof title !== 'string' || !title) continue;
-    const locality = place.city || place.locality || place.county || place.state || place.country;
-    const subtitle = [place.type === 'house' ? null : streetAddress, locality, place.district]
-      .filter((part, index, all) => part && part !== title && all.indexOf(part) === index).join(', ');
-    const id = longitude + ',' + latitude + ' ' + title;
-    results.set(id, { id, title, subtitle, latitude, longitude });
+    const id = Number.isSafeInteger(place.osm_id) && /^[NWR]$/.test(place.osm_type)
+      ? place.osm_type + place.osm_id : longitude + ',' + latitude;
+    results.set(id, { id, latitude, longitude, place });
     if (results.size === 5) break;
   }
   return [...results.values()];
+}
+
+function formatStreet(name) {
+  const suffix = /^(.+) (улица|переулок|проспект|бульвар|проезд|площадь|набережная)$/iu.exec(name);
+  return suffix ? suffix[2].toLowerCase() + ' ' + suffix[1] : name;
+}
+
+async function localizedAddress({ place, ...point }, namesForPoint) {
+  const lookup = await namesForPoint(point);
+  const name = (field, group) => readRussianLabel(place[field + ':ru']) || lookup(place[field], group);
+  const street = formatStreet(name('street', 'street'));
+  const house = readRussianLabel(place.housenumber);
+  const address = street ? [street, house].filter(Boolean).join(', ') : '';
+  const placeName = place.type === 'street'
+    ? formatStreet(name('name', 'street')) : name('name', 'place') || name('name', 'area');
+  const titleFromData = place.type === 'house' ? address : placeName || address;
+  const title = titleFromData || (house ? 'Дом №' + house : place.type === 'street' ? 'Улица на карте' : 'Место на карте');
+  const locality = ['city', 'locality', 'county', 'state', 'country'].map(field => name(field, 'area')).find(Boolean);
+  const district = name('district', 'area');
+  const coordinates = point.latitude.toFixed(5) + ', ' + point.longitude.toFixed(5);
+  const parts = [address, locality, district, titleFromData ? '' : coordinates];
+  const subtitle = [...new Set(parts.filter(part => part && part !== title))].join(', ');
+  return { ...point, title, subtitle };
 }
 
 function coordinatesParam(point) {
@@ -120,6 +140,7 @@ function sendServiceError(res, error, fallback) {
 
 function createMapNavigationRouter({
   geocoderUrl = process.env.MAP_GEOCODER_URL?.trim() || defaultGeocoder,
+  namesForPoint = createRussianNameLookup(),
   walkingUrl = process.env.MAP_WALK_ROUTER_URL?.trim() || defaultRouter + '/routed-foot/route/v1/driving/',
   drivingUrl = process.env.MAP_DRIVE_ROUTER_URL?.trim() || defaultRouter + '/routed-car/route/v1/driving/',
 } = {}) {
@@ -147,18 +168,19 @@ function createMapNavigationRouter({
     res.set('Cache-Control', 'no-store');
     const query = cleanQuery(text);
     if (!tokens(query).length) return res.json([]);
-    const cached = cache.get(query);
-    if (cached && cached.expires > Date.now()) return res.json(cached.results);
-
     try {
-      let results = addressResults(await searchPhoton(query), query);
-      const localSpelling = query.replace(/и/g, 'і').replace(/ы/g, 'и');
-      if (!results.length && localSpelling !== query) {
-        results = addressResults(await searchPhoton(localSpelling), query);
+      const cached = cache.get(query);
+      let candidates = cached && cached.expires > Date.now() ? cached.candidates : null;
+      if (!candidates) {
+        candidates = addressCandidates(await searchPhoton(query), query);
+        const localSpelling = query.replace(/и/g, 'і').replace(/ы/g, 'и');
+        if (!candidates.length && localSpelling !== query) {
+          candidates = addressCandidates(await searchPhoton(localSpelling), query);
+        }
+        if (cache.size >= 128) cache.delete(cache.keys().next().value);
+        cache.set(query, { candidates, expires: Date.now() + 10 * 60 * 1000 });
       }
-      if (cache.size >= 128) cache.delete(cache.keys().next().value);
-      cache.set(query, { results, expires: Date.now() + 10 * 60 * 1000 });
-      return res.json(results);
+      return res.json(await Promise.all(candidates.map(candidate => localizedAddress(candidate, namesForPoint))));
     } catch (error) {
       return sendServiceError(res, error, 'Поиск адресов временно недоступен. Попробуйте ещё раз.');
     }

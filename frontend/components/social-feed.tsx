@@ -9,6 +9,7 @@ import type { Story } from '@/constants/content';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { addSocialComment, getSocialComments, getSocialFeed, publishSocial, setSocialLike, socialRequestId, type SocialComment, type SocialItem } from '@/lib/social';
 import { getUserSession, type UserSession } from '@/lib/user-session';
+import { ApiError } from '@/lib/statistics';
 
 type StoryEntry = { id: string; authorKey: string; name: string; text: string; image: string | null; avatar: string | null; placeId: string | null };
 export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Story[]; legacyError: boolean }) {
@@ -16,7 +17,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
   const router = useRouter();
   const [session, setSession] = useState<UserSession | null>(null);
   const [items, setItems] = useState<SocialItem[]>([]);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error' | 'auth'>('loading');
   const [storyGroup, setStoryGroup] = useState<StoryEntry[] | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
   const [commentItem, setCommentItem] = useState<SocialItem | null>(null);
@@ -32,7 +33,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
       const current = await getUserSession(); setSession(current);
       setItems(current && current.role !== 'admin' ? await getSocialFeed() : []);
       setStatus('ready');
-    } catch { setItems([]); setStatus('error'); }
+    } catch (cause) { setItems([]); setStatus(cause instanceof ApiError && cause.status === 401 ? 'auth' : 'error'); }
   }, []);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
   const groups = useMemo(() => {
@@ -89,7 +90,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
       {groups.map(group => <Pressable accessibilityRole="button" accessibilityLabel={`Истории ${group[0].name}`} key={group[0].authorKey} onPress={() => {setStoryGroup(group); setStoryIndex(0);}} style={styles.storyItem}><View style={styles.ring}>{group[0].avatar ? <Image source={{uri:group[0].avatar}} style={styles.avatar}/> : <Text style={styles.initial}>{group[0].name.charAt(0).toUpperCase()}</Text>}</View><Text numberOfLines={1} style={styles.storyName}>{group[0].name}</Text></Pressable>)}
     </ScrollView>
     {!groups.length && status === 'ready' && !legacyError && <Text style={styles.hint}>{session ? 'Истории друзей и заведений из подписок появятся здесь' : 'Войдите, чтобы видеть истории друзей и подписок'}</Text>}
-    {(status === 'error' || legacyError) && <Pressable onPress={() => void load()} accessibilityRole="button"><Text style={styles.error}>Не удалось загрузить истории или публикации. Нажмите, чтобы повторить.</Text></Pressable>}
+    {status === 'auth' ? <Pressable onPress={() => router.push('/login')} accessibilityRole="button"><Text style={styles.error}>Сессия закончилась. Нажмите, чтобы войти снова.</Text></Pressable> : (status === 'error' || legacyError) && <Pressable onPress={() => void load()} accessibilityRole="button"><Text style={styles.error}>Не удалось загрузить истории или публикации. Нажмите, чтобы повторить.</Text></Pressable>}
     {status === 'loading' && <ActivityIndicator color={palette.olive} />}
     {session && <View style={styles.postsSection}>
       <Text style={styles.heading}>Друзья и подписки</Text>

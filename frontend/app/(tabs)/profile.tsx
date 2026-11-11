@@ -56,6 +56,7 @@ export default function ProfileScreen() {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authExpired, setAuthExpired] = useState(false);
   const [connections, setConnections] = useState<Connections | null>(null);
 
   useFocusEffect(
@@ -65,6 +66,7 @@ export default function ProfileScreen() {
         console.log('🔍 Загрузка сессии и данных профиля...');
         setLoading(true);
         setError(null);
+        setAuthExpired(false);
         setConnections(null);
 
         const userSession = await getUserSession();
@@ -89,7 +91,9 @@ export default function ProfileScreen() {
             console.warn('⚠️ Бэкенд недоступен, используем пустые данные:', apiError);
             if (controller.signal.aborted) return;
             postsData = [];
-            setError('Бэкенд временно недоступен. Некоторые данные могут быть недоступны.');
+            const expired = apiError instanceof ApiError && apiError.status === 401;
+            setAuthExpired(expired);
+            setError(expired ? 'Сессия закончилась. Войдите в аккаунт снова.' : 'Бэкенд временно недоступен. Некоторые данные могут быть недоступны.');
           }
 
           if (controller.signal.aborted) return;
@@ -98,6 +102,10 @@ export default function ProfileScreen() {
           const connectionsRequest = userSession.role === 'user'
             ? getConnections(controller.signal).catch(cause => {
               if (!controller.signal.aborted) {
+                if (cause instanceof ApiError && cause.status === 401) {
+                  setAuthExpired(true);
+                  setError('Сессия закончилась. Войдите в аккаунт снова.');
+                }
                 console.warn(cause instanceof ApiError && cause.status === 401
                   ? 'Войдите снова, чтобы загрузить друзей.'
                   : 'Не удалось загрузить друзей.');
@@ -110,7 +118,13 @@ export default function ProfileScreen() {
             getFavoritePosts(),
             getFavoritePostsCount(),
             connectionsRequest,
-            userSession.role === 'admin' ? Promise.resolve([]) : getSocialFeed().catch(() => []),
+            userSession.role === 'admin' ? Promise.resolve([]) : getSocialFeed().catch(cause => {
+              if (!controller.signal.aborted && cause instanceof ApiError && cause.status === 401) {
+                setAuthExpired(true);
+                setError('Сессия закончилась. Войдите в аккаунт снова.');
+              }
+              return [];
+            }),
           ]);
           if (controller.signal.aborted) return;
           setConnections(connectionsData);
@@ -240,6 +254,7 @@ export default function ProfileScreen() {
           <View style={styles.errorBanner}>
             <Ionicons name="warning-outline" size={20} color="#BC6C25" />
             <Text style={styles.errorText}>{error}</Text>
+            {authExpired && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/login')}><Text style={styles.authLink}>Войти</Text></TouchableOpacity>}
           </View>
         )}
         <View style={styles.headerCard}>
@@ -500,6 +515,7 @@ const baseStyles = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
   },
+  authLink: { color: '#606C38', fontWeight: '700', marginLeft: 8 },
   errorText: {
     fontSize: 14,
     color: '#92400e',

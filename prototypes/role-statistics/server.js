@@ -13,7 +13,10 @@ const profiles = Object.freeze({
 });
 const sample = Object.freeze({
   search: {type:'search', actorId:'demo-user-1'},
-  card_view: {type:'card_view', actorId:'demo-user-1', placeId:'demo-place-1'},
+  search_no_results: {type:'search_no_results', actorId:'demo-user-1'},
+  card_view: {type:'card_view', actorId:'demo-user-1', placeId:'demo-place-1', category:'cafe'},
+  card_walk: {type:'card_view', actorId:'demo-user-1', placeId:'demo-place-1', category:'walk'},
+  card_event: {type:'card_view', actorId:'demo-user-1', placeId:'demo-place-1', category:'event'},
   favorite_added: {type:'favorite_added', actorId:'demo-user-1', placeId:'demo-place-1'},
   like_added: {type:'like_added', actorId:'demo-user-1', placeId:'demo-place-1'},
   route_requested: {type:'route_requested', actorId:'demo-user-1', placeId:'demo-place-1'},

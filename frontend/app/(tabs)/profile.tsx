@@ -17,10 +17,12 @@ import {
 
 import { getConnections, type Connections } from '@/lib/connections';
 import { getCompanyPlaces } from '@/lib/company-places';
+import { getAccountProfile } from '@/lib/account-profile';
 import { getSocialFeed, type SocialItem } from '@/lib/social';
 import { ApiError } from '@/lib/statistics';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { SocialMedia } from '@/components/social-media';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
 import {
   getFavoritePosts,
@@ -82,6 +84,12 @@ export default function ProfileScreen() {
         setSession(userSession);
 
         try {
+          if (userSession.role !== 'admin') {
+            const profile = await getAccountProfile(controller.signal);
+            if (controller.signal.aborted) return;
+            Object.assign(userSession, { avatar: profile.avatar, bio: profile.bio, isPrivate: profile.isPrivate });
+            setSession({ ...userSession });
+          }
           // Загружаем посты из API бэкенда
           let postsData: Post[];
           try {
@@ -139,7 +147,11 @@ export default function ProfileScreen() {
           setFavoriteCount(favoriteCount);
         } catch (error) {
           console.error('❌ Ошибка загрузки данных профиля:', error);
-          if (!controller.signal.aborted) setError('Ошибка загрузки данных');
+          if (!controller.signal.aborted) {
+            const expired = error instanceof ApiError && error.status === 401;
+            setAuthExpired(expired);
+            setError(expired ? 'Сессия закончилась. Войдите в аккаунт снова.' : 'Ошибка загрузки данных');
+          }
         } finally {
           if (!controller.signal.aborted) setLoading(false);
         }
@@ -259,11 +271,12 @@ export default function ProfileScreen() {
         )}
         <View style={styles.headerCard}>
           <View style={styles.profileIdentityRow}>
-            {isDemoProfile || session.avatar ? <Image source={{ uri: isDemoProfile ? demoProfile.avatar : session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
+            {session.avatar ? <Image source={{ uri: session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
             <View style={styles.profileIdentity}>
               <ThemedText type="title" style={styles.displayName}>{isDemoProfile ? demoProfile.name : `${session.name}${session.surname && !isCompany ? ` ${session.surname}` : ''}`}</ThemedText>
               {isDemoProfile && <Text style={styles.profileSubtitle}>{demoProfile.subtitle}</Text>}
-              {isDemoProfile && <View style={styles.accountTag}><Text style={styles.accountTagText}>{demoProfile.status}</Text></View>}
+              {!!session.bio && <Text style={styles.profileBio}>{session.bio}</Text>}
+              {session.role === 'user' && <View style={styles.privacyTag}><Ionicons name={session.isPrivate !== false ? 'lock-closed-outline' : 'globe-outline'} size={14} color="#606C38" /><Text style={styles.privacyText}>{session.isPrivate !== false ? 'Приватный профиль' : 'Открытый профиль'}</Text></View>}
             </View>
           </View>
           <View style={styles.statsRow}>
@@ -369,7 +382,7 @@ export default function ProfileScreen() {
               <Text style={styles.ownSocialDate}>{new Date(item.createdAt).toLocaleDateString('ru-RU')}</Text>
               {!!item.body && <Text style={styles.ownSocialText}>{item.body}</Text>}
               {!!item.originalId && <Text style={styles.ownSocialText}>Репост: {item.originalAuthorName} · {item.originalBody}</Text>}
-              {!!item.imageUrl && <Image source={{uri:item.imageUrl}} style={styles.ownSocialImage} />}
+              {!!(item.mediaUrl || item.imageUrl) && <SocialMedia uri={item.mediaUrl || item.imageUrl!} kind={item.mediaKind || 'image'} style={styles.ownSocialImage} />}
             </View>) : <Text style={styles.emptyStateText}>{profileTab === 'posts' ? 'У вас пока нет публикаций.' : 'У вас пока нет активных историй.'}</Text>}</View>}
           </>
         )}
@@ -480,6 +493,9 @@ const baseStyles = StyleSheet.create({
   profileIdentity: { flex: 1, alignItems: 'flex-start', gap: 5 },
   avatarPlaceholder: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#F0ECCD', alignItems: 'center', justifyContent: 'center' },
   profileSubtitle: { fontSize: 14, color: '#6F7457' },
+  profileBio: { fontSize: 14, lineHeight: 21, color: '#283618', flexShrink: 1 },
+  privacyTag: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
+  privacyText: { fontSize: 12, color: '#606C38' },
   menuCard: { borderRadius: 20, backgroundColor: '#FFFCED', borderWidth: 1, borderColor: '#D9D6B5', paddingHorizontal: 14 },
   menuRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
   menuIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#F0ECCD' },
@@ -504,7 +520,7 @@ const baseStyles = StyleSheet.create({
     padding: 20,
     gap: 14,
     paddingTop: 38,
-    paddingBottom: 130,
+    paddingBottom: 150,
   },
   errorBanner: {
     flexDirection: 'row',

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,19 +25,27 @@ export default function RecommendationsScreen() {
   const [category, setCategory] = useState('all');
   const [places, setPlaces] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [stories, setStories] = useState<Story[]>([]);
   const [storiesState, setStoriesState] = useState<'guest' | 'ready' | 'error'>('guest');
   const [favorites, setFavorites] = useState<string[]>([]);
   const [likes, setLikes] = useState<string[]>([]);
   const [savingFavorite, setSavingFavorite] = useState<string | null>(null);
+  const loaded = useRef(false);
+  const loadingRequest = useRef(false);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    if (loadingRequest.current) return;
+    loadingRequest.current = true;
+    // Returning from a post refreshes data in place instead of unmounting the list.
+    if (!loaded.current) setLoading(true);
     setError(false);
     try {
       const posts = await databaseService.getPosts();
       setPlaces(posts);
+      loaded.current = true;
+      setHasLoaded(true);
       const session = await getUserSession();
       const [saved, liked] = session ? await Promise.all([getFavoritePosts(), getLikedPosts()]) : [[], []];
       setFavorites(saved); setLikes(liked);
@@ -57,6 +65,7 @@ export default function RecommendationsScreen() {
     } catch {
       setError(true);
     } finally {
+      loadingRequest.current = false;
       setLoading(false);
     }
   }, []);
@@ -84,7 +93,7 @@ export default function RecommendationsScreen() {
         </View>
         {mode === 'sketch' && <Image source={require('@/assets/images/mascot-sketch.png')} style={styles.mascot} accessibilityLabel="Маскот приложения" />}
       </View>
-      {loading ? <View style={styles.state}><ActivityIndicator color={palette.olive} /><Text style={styles.stateText}>Загружаем места...</Text></View> : error ? (
+      {loading ? <View style={styles.state}><ActivityIndicator color={palette.olive} /><Text style={styles.stateText}>Загружаем места...</Text></View> : error && !hasLoaded ? (
         <View style={styles.state}><Ionicons name="cloud-offline-outline" size={36} color={palette.olive} /><Text style={styles.stateText}>Не удалось загрузить места. Проверьте соединение.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.retry}><Text style={styles.retryText}>Попробовать снова</Text></Pressable></View>
       ) : (
         <FlatList
@@ -93,6 +102,7 @@ export default function RecommendationsScreen() {
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={<View>
+            {error && <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.storyError}>Не удалось обновить места. Нажмите, чтобы повторить.</Text></Pressable>}
             <SocialFeed legacyStories={stories} legacyError={storiesState === 'error'} />
             <FlatList horizontal data={placeCategories} keyExtractor={item => item.id} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} renderItem={({ item }) => (
               <Pressable accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => setCategory(item.id)} style={[styles.filter, category === item.id && styles.filterActive]}><Text style={[styles.filterText, category === item.id && styles.filterTextActive]}>{item.name}</Text></Pressable>
@@ -103,7 +113,7 @@ export default function RecommendationsScreen() {
           ListEmptyComponent={<View style={styles.state}><Ionicons name="leaf-outline" size={36} color={palette.olive} /><Text style={styles.stateText}>{places.length ? 'В этой категории пока нет мест' : 'Пока нет доступных мест'}</Text></View>}
           renderItem={({ item }) => (
             <View style={styles.post}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Открыть ${item.place}`} onPress={() => router.push({ pathname: '/company/[id]', params: { id: item.id } })} style={styles.photoWrap}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => router.push({ pathname: '/place-post/[id]', params: { id: item.id } })} style={styles.photoWrap}>
                 <Image source={{ uri: item.image }} style={styles.photo} />
                 <LinearGradient colors={['transparent', 'rgba(20, 25, 14, 0.78)']} style={styles.photoShade} />
                 <View style={styles.photoCaption}><Ionicons name="location" size={15} color="#fff" /><Text numberOfLines={1} style={styles.photoPlace}>{item.place}</Text><Text style={styles.photoRating}>★ <Text style={styles.photoRatingValue}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text></View>
@@ -114,7 +124,7 @@ export default function RecommendationsScreen() {
               <View style={styles.cardBody}>
                 <View style={styles.cardInfo}><Text style={styles.cardTitle}>{item.place}</Text><Text numberOfLines={2} style={styles.address}>{item.bio || item.address || 'Адрес не указан'}</Text>
                   <View style={styles.tags}>{item.tags.slice(0, 2).map(tag => <Text key={tag} style={styles.tag}>{tag}</Text>)}</View></View>
-                <Pressable accessibilityRole="button" accessibilityLabel={`Подробнее: ${item.place}`} onPress={() => router.push({ pathname: '/company/[id]', params: { id: item.id } })} style={styles.cardArrow}><Ionicons name="arrow-forward" size={21} color={palette.cream} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => router.push({ pathname: '/place-post/[id]', params: { id: item.id } })} style={styles.cardArrow}><Ionicons name="arrow-forward" size={21} color={palette.cream} /></Pressable>
               </View>
               <SketchFrame />
             </View>

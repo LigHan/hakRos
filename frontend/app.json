@@ -28,9 +28,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Разрешите выбрать фото для карточки заведения.",
-          "cameraPermission": false,
-          "microphonePermission": false
+          "photosPermission": "Разрешите выбирать фото и видео для профиля и публикаций.",
+          "cameraPermission": "Разрешите снимать фото и видео для публикаций и историй.",
+          "microphonePermission": "Разрешите записывать звук в видео для публикаций и историй."
         }
       ],
       [
@@ -44,7 +44,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

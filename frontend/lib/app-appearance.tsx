@@ -101,8 +101,15 @@ export function useAppStyles<T extends Record<string, object>>(source: T): T {
           result.shadowOpacity = 0;
           result.elevation = 0;
         }
-        if (/(?:title|heading)$/i.test(name) && Number(result.fontSize) >= 20) {
-          if (handFontReady) result.fontFamily = 'HakrosHand';
+        if (/(?:title|heading|headline)$/i.test(name) && Number(result.fontSize) >= 20 && handFontReady) {
+          const size = Number(result.fontSize);
+          result.fontFamily = 'HakrosHand';
+          // Caveat needs more ascent/descent than the system font. Preserve a
+          // readable line box without making fixed controls or body text grow.
+          result.lineHeight = Math.max(Number(result.lineHeight) || 0, Math.ceil(size * 1.45));
+          result.fontWeight = '400';
+          result.flexShrink = 1;
+          result.minWidth = 0;
         }
       }
       return [name, result];

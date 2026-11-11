@@ -9,6 +9,8 @@ export interface UserSession {
   token: string;
   handle: string;
   avatar: string;
+  bio?: string;
+  isPrivate?: boolean;
   accountType: 'user' | 'company';
   // Добавляем обратно favorites и liked
   favorites: string[];

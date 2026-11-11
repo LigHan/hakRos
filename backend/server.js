@@ -8,7 +8,10 @@ const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
 const map = require('./map')(db, statistics.auth, statistics.optionalAuth);
 const connections = require('./connections')(db, statistics.auth, { onFriendRemoved: map.revokeFriendship });
-const social = require('./social')(db, statistics.auth);
+const accountProfiles = require('./account-profile')(db, statistics.auth);
+const media = require('./media')(db, statistics.auth);
+const social = require('./social')(db, statistics.auth, media);
+media.setCanRead(social.canReadMedia);
 const path = require('node:path');
 const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
 
@@ -31,10 +34,12 @@ const endpoints = [
 
 app.use(cors({
   origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use('/api/company/places', companyPlaces.router);
+app.use('/api', accountProfiles.router);
+app.use('/api/media', media.router);
 app.use(express.json());
 app.use('/map-assets', express.static(path.join(__dirname, 'map-assets')));
 app.use('/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist')));
@@ -171,6 +176,8 @@ function reportStartupError(error) {
 db.ready.then(async () => {
   await statistics.initialize();
   await connections.initialize();
+  await accountProfiles.initialize();
+  await media.initialize();
   await social.initialize();
   await map.initialize();
   await companyPlaces.initialize();

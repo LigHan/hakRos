@@ -8,6 +8,7 @@
 |---|---|
 | Среда | Node.js 24.22.2, npm 11.19.1, Windows |
 | Интерфейс | Expo 58.0.23, Expo Router 58.0.30, React и React DOM 19.3.0 |
+| Видео и загрузка файлов | expo-video 58.0.14, expo-file-system 58.0.13; запись и выбор через существующий expo-image-picker 58.0.10 |
 | Платформы | React Native 0.88.1, React Native Web 0.21.4, WebView 14.0.1 |
 | Проверки | TypeScript 6.0.3, ESLint 9.39.5, eslint-config-expo 58.0.4 |
 | Сервер | Express 5.3.0, sqlite3 6.0.1, bcrypt 6.0.0, dotenv 18.0.10, cors 2.8.6 |

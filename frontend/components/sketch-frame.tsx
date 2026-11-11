@@ -11,10 +11,11 @@ export function SketchFrame() {
 
 const styles = StyleSheet.create({
   frame: {
-    position: 'absolute', top: 3, bottom: 3, left: 3, right: 3,
+    position: 'absolute', top: 1, bottom: 1, left: 1, right: 1,
     borderColor: palette.forest, borderWidth: 1.6,
     borderTopLeftRadius: 26, borderTopRightRadius: 18,
     borderBottomRightRadius: 25, borderBottomLeftRadius: 16,
-    transform: [{ rotate: '-0.35deg' }, { skewX: '0.25deg' }],
+    // Asymmetric corners keep the hand-drawn character without a rotated
+    // outline spilling outside narrow or tall cards.
   },
 });

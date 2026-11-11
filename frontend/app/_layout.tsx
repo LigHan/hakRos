@@ -2,10 +2,11 @@ import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { AppearanceProvider, palette, useAppStyles } from '@/lib/app-appearance';
+import { FloatingNavigation } from '@/components/floating-navigation';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -24,6 +25,8 @@ function AppLayout() {
   const styles = useAppStyles(baseStyles);
   const isWeb = Platform.OS === 'web';
   const pathname = usePathname();
+  const { width, height } = useWindowDimensions();
+  const compactWeb = isWeb && (width < 520 || height < 700);
   // Админ-панель веба занимает весь экран, пользовательские экраны сохраняют прежний размер.
   const isWebAdmin = isWeb && pathname === '/admin';
   const shellStyle = isWebAdmin ? styles.adminShell : isWeb ? styles.webShell : styles.nativeShell;
@@ -31,8 +34,8 @@ function AppLayout() {
 
   return (
     <ThemeProvider value={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, primary: palette.olive, background: palette.cream, card: palette.cream, text: palette.forest, border: palette.border } }}>
-      <View style={shellStyle}>
-        <View style={viewportStyle}>
+      <View style={[shellStyle, compactWeb && styles.compactWebShell]}>
+        <View style={[viewportStyle, compactWeb && styles.compactWebViewport]}>
           <View style={styles.stackContainer}>
             <Stack screenOptions={{ headerLeft: () => <BackButton />, headerTintColor: palette.forest }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -40,8 +43,11 @@ function AppLayout() {
               <Stack.Screen name="company/[id]" options={{ headerTitle: '', headerTransparent: true }} />
               <Stack.Screen name="admin" options={{ headerShown: false }} />
               <Stack.Screen name="settings" options={{ title: 'Настройки', headerStyle: { backgroundColor: palette.cream }, headerTintColor: palette.forest }} />
+              <Stack.Screen name="post/[id]" options={{ title: 'Публикация' }} />
+              <Stack.Screen name="place-post/[id]" options={{ title: 'Публикация места' }} />
             </Stack>
           </View>
+          <FloatingNavigation />
         </View>
       </View>
       <StatusBar style="dark" />
@@ -85,4 +91,6 @@ const baseStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#ffffff',
   },
+  compactWebShell: { paddingVertical: 0 },
+  compactWebViewport: { borderRadius: 0, shadowOpacity: 0, elevation: 0 },
 });

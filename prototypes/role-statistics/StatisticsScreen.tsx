@@ -1,18 +1,18 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-type Metric = 'search' | 'card_view' | 'share_initiated' | 'favorite_added' | 'like_added' | 'route_requested';
+type Metric = 'search' | 'search_no_results' | 'card_view' | 'share_initiated' | 'favorite_added' | 'like_added' | 'route_requested';
 type Role = 'admin' | 'company' | 'user';
-export type Statistics = { from: string; to: string; counts: Record<Metric, number> };
+export type Statistics = { from: string; to: string; counts: Record<Metric, number>; categories: Record<'cafe' | 'walk' | 'event', number> };
 type Props = { role: Role; data?: Statistics | null; loading?: boolean; error?: string | null; onRetry?: () => void };
 const labels: Record<Metric, string> = {
-  search: 'Запросы подбора', card_view: 'Просмотры карточек', share_initiated: 'Нажатия «Поделиться»',
+  search: 'Запросы подбора', search_no_results: 'Подборы без результатов', card_view: 'Просмотры карточек', share_initiated: 'Нажатия «Поделиться»',
   favorite_added: 'Добавления в избранное', like_added: 'Отметки «Нравится»', route_requested: 'Запросы маршрута',
 };
 const metrics: Record<Role, Metric[]> = {
-  admin: ['search', 'card_view', 'share_initiated', 'favorite_added', 'like_added', 'route_requested'],
+  admin: ['search', 'search_no_results', 'card_view', 'share_initiated', 'favorite_added', 'like_added', 'route_requested'],
   company: ['card_view', 'favorite_added', 'like_added', 'route_requested', 'share_initiated'],
-  user: ['search', 'card_view', 'favorite_added', 'like_added', 'route_requested', 'share_initiated'],
+  user: ['search', 'search_no_results', 'card_view', 'favorite_added', 'like_added', 'route_requested', 'share_initiated'],
 };
 const titles: Record<Role, string> = { admin: 'Статистика сервиса', company: 'Статистика ваших мест', user: 'Моя активность' };
 
@@ -26,7 +26,7 @@ export default function StatisticsScreen({ role, data, loading, error, onRetry }
       <Text style={styles.period}>Период: {data.from.slice(0, 10)} — до {data.to.slice(0, 10)} (UTC, не включая последний день)</Text>
       <View style={styles.grid}>{metrics[role].map(metric => <View key={metric} style={styles.card}>
         <Text style={styles.label}>{labels[metric]}</Text><Text style={styles.value}>{data.counts[metric]}</Text>
-      </View>)}</View>
+      </View>)}{(['cafe', 'walk', 'event'] as const).map(category => <View key={category} style={styles.card}><Text style={styles.label}>{({cafe: 'Просмотры: кафе', walk: 'Просмотры: прогулки', event: 'Просмотры: события'})[category]}</Text><Text style={styles.value}>{data.categories[category]}</Text></View>)}</View>
       <Text style={styles.caption}>Считаются действия за период. Нажатие «Поделиться» не подтверждает отправку.</Text>
     </>}
   </ScrollView>;

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserSession } from './user-session';
+import { track } from './statistics';
 
 // Ключи для хранения лайков и избранного по пользователям
 const getLikedPostsKey = (userId: string) => `liked-posts-${userId}`;
@@ -86,6 +87,7 @@ export async function toggleLike(postId: string): Promise<{success: boolean; req
 
     // Сохраняем в AsyncStorage под ключом пользователя
     await AsyncStorage.setItem(getLikedPostsKey(userId), JSON.stringify(newLiked));
+    if (!isLiked) track('like_added', postId);
     console.log('✅ Лайки сохранены для пользователя:', userId);
 
     return { success: true, requiresAuth: false };
@@ -120,6 +122,7 @@ export async function toggleFavorite(postId: string): Promise<{success: boolean;
 
     // Сохраняем в AsyncStorage под ключом пользователя
     await AsyncStorage.setItem(getFavoritePostsKey(userId), JSON.stringify(newFavorites));
+    if (!isFavorite) track('favorite_added', postId);
     console.log('✅ Избранное сохранено для пользователя:', userId);
 
     return { success: true, requiresAuth: false };
@@ -184,3 +187,4 @@ export async function clearUserLikesAndFavorites(userId: string): Promise<void> 
     throw error;
   }
 }
+

@@ -1,3 +1,5 @@
+import { authorized, track } from '@/lib/statistics';
+import { getUserSession } from '@/lib/user-session';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -6,12 +8,15 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
 
+import { PlaceSubscriptionButton } from '@/components/place-subscription';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
@@ -39,6 +44,35 @@ function PlaceDetails({ id }: { id?: string }) {
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isGalleryVisible, setGalleryVisible] = useState(false);
+  const [isWebAdmin, setWebAdmin] = useState(false);
+  const [moderationError, setModerationError] = useState('');
+  const [moderating, setModerating] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (Platform.OS === 'web') void getUserSession().then(session => { if (active) setWebAdmin(session?.role === 'admin'); });
+    return () => { active = false; };
+  }, []);
+
+  // Модерация доступна в вебе, а итоговое решение о правах принимает API.
+  const deletePlace = async () => {
+    if (!post || moderating || !window.confirm('Удалить публикацию и связанные с ней отзывы и истории?')) return;
+    setModerating(true); setModerationError('');
+    try {
+      await authorized(`/api/admin/places/${encodeURIComponent(post.id)}`, { method: 'DELETE' });
+      router.replace('/');
+    } catch (e) { setModerationError(e instanceof Error ? e.message : 'Не удалось удалить публикацию'); }
+    finally { setModerating(false); }
+  };
+  const deleteReview = async (reviewId: string) => {
+    if (moderating || !window.confirm('Удалить этот отзыв?')) return;
+    setModerating(true); setModerationError('');
+    try {
+      await authorized(`/api/admin/reviews/${encodeURIComponent(reviewId)}`, { method: 'DELETE' });
+      setPost(current => current ? { ...current, reviews: current.reviews.filter(review => review.id !== reviewId) } : current);
+    } catch (e) { setModerationError(e instanceof Error ? e.message : 'Не удалось удалить отзыв'); }
+    finally { setModerating(false); }
+  };
 
   const loadPostData = useCallback(() => {
     if (!id) return;
@@ -51,6 +85,7 @@ function PlaceDetails({ id }: { id?: string }) {
           return;
         }
         const [liked, favorite] = await Promise.all([isPostLiked(id), isPostFavorite(id)]);
+        track('card_view', postData.id);
         setPost(postData);
         setIsLiked(liked);
         setIsFavorite(favorite);
@@ -140,9 +175,23 @@ function PlaceDetails({ id }: { id?: string }) {
   };
 
   const buildRoute = () => {
+    if (post) track('route_requested', post.id);
     if (!post) return;
     router.push('/map');
     triggerMapRoute(post.address);
+  };
+
+  const sharePlace = async () => {
+    if (!post) return;
+    track('share_initiated', post.id);
+    const message = `${post.place} — ${post.address}`;
+    try {
+      if (Platform.OS === 'web') {
+        if (navigator.share) await navigator.share({ title: post.place, text: message });
+        else if (navigator.clipboard) await navigator.clipboard.writeText(message);
+        else throw new Error('Недоступен обмен');
+      } else await Share.share({ message });
+    } catch (error) { console.warn('Не удалось поделиться местом', error); }
   };
 
   const handleCloseAuth = () => {
@@ -242,6 +291,8 @@ function PlaceDetails({ id }: { id?: string }) {
 
         {/* Информация о месте */}
         <View style={styles.content}>
+          {moderationError ? <Text accessibilityRole="alert" style={{ color: '#b42318', marginBottom: 12 }}>{moderationError}</Text> : null}
+          {isWebAdmin && <TouchableOpacity accessibilityRole="button" disabled={moderating} onPress={() => void deletePlace()}><Text style={{ color: '#b42318', marginBottom: 12 }}>Удалить публикацию</Text></TouchableOpacity>}
           <View style={styles.header}>
             <View style={styles.titleRow}>
               <ThemedText type="title" style={styles.title}>
@@ -261,6 +312,7 @@ function PlaceDetails({ id }: { id?: string }) {
               </View>
             </View>
 
+            <PlaceSubscriptionButton placeId={post.id} />
             <Text style={styles.bio}>{post.bio}</Text>
 
             <TouchableOpacity style={styles.addressRow} onPress={openInMap}>
@@ -303,6 +355,11 @@ function PlaceDetails({ id }: { id?: string }) {
             <TouchableOpacity style={styles.actionButton} onPress={buildRoute}>
               <Ionicons name="navigate-outline" size={24} color="#1C1C1E" />
               <Text style={styles.actionText}>Маршрут</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionButton} onPress={sharePlace}>
+              <Ionicons name="share-outline" size={24} color="#1C1C1E" />
+              <Text style={styles.actionText}>Поделиться</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionButton} onPress={openInMap}>
@@ -397,6 +454,7 @@ function PlaceDetails({ id }: { id?: string }) {
                     </View>
                     <Text style={styles.reviewComment}>{review.comment}</Text>
                     <Text style={styles.reviewDate}>{review.date}</Text>
+                    {isWebAdmin && <TouchableOpacity accessibilityRole="button" disabled={moderating} onPress={() => void deleteReview(review.id)}><Text style={{ color: '#b42318', marginTop: 8 }}>Удалить отзыв</Text></TouchableOpacity>}
                   </View>
                 ))}
               </View>
@@ -883,3 +941,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+

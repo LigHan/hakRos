@@ -30,6 +30,6 @@ export type MapCanvasProps = {
   state: MapState;
   onSelect: (latitude: number, longitude: number) => void;
   onError: (message: string) => void;
-  onSubmit: (id: string) => void;
-  onOpenPlace: (id: string) => void;
+  onSubmit?: (id: string) => void;
+  onOpenPlace?: (id: string) => void;
 };

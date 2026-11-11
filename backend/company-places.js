@@ -3,12 +3,13 @@
 const { createHash, randomUUID } = require('node:crypto');
 const express = require('express');
 const readJpeg = require('./jpeg');
+const { validCoordinates } = require('./map-navigation');
 
 const categories = new Set(['', 'cafe', 'restaurant', 'park', 'museum', 'shop', 'entertainment']);
 const maxCoverBytes = 1024 * 1024;
 const defaultImage = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
-// Обновление через представление выполняет запись карточки, владельца и расписания одним SQL-запросом.
+// Представление сохраняет карточку, расписание и метку одним SQL-запросом.
 const schema = `
   BEGIN IMMEDIATE;
 
@@ -23,12 +24,14 @@ const schema = `
   CREATE VIEW company_place_editor AS
     SELECT o.owner_id, p.id, p.user, p.userAvatar, p.userHandle,
       p.place, p.address, p.bio, p.category, p.image, NULL AS cover,
+      m.latitude, m.longitude, NULL AS map_coordinates,
       (
         SELECT json_group_array(json_object('label', label, 'value', value))
         FROM working_hours WHERE post_id = p.id
       ) AS hours
     FROM local_place_owners AS o
-    JOIN posts AS p ON p.id = o.place_id;
+    JOIN posts AS p ON p.id = o.place_id
+    LEFT JOIN map_places AS m ON m.post_id = p.id;
 
   CREATE TRIGGER company_place_insert
     INSTEAD OF INSERT ON company_place_editor BEGIN
@@ -41,10 +44,15 @@ const schema = `
       INSERT INTO working_hours (post_id, label, value)
         SELECT NEW.id, json_extract(value, '$.label'), json_extract(value, '$.value')
         FROM json_each(NEW.hours) ORDER BY CAST(key AS INTEGER);
+      INSERT INTO map_places (id, name, latitude, longitude, creator_id, post_id, created_at, review_status)
+        SELECT 'company-' || NEW.id, NEW.place, json_extract(NEW.map_coordinates, '$.latitude'),
+          json_extract(NEW.map_coordinates, '$.longitude'), NEW.owner_id, NEW.id,
+          STRFTIME('%Y-%m-%dT%H:%M:%fZ', 'now'), 'approved'
+        WHERE json_type(NEW.map_coordinates) = 'object';
     END;
 
   CREATE TRIGGER company_place_update
-    INSTEAD OF UPDATE OF place, address, bio, category, image, hours, cover ON company_place_editor BEGIN
+    INSTEAD OF UPDATE OF place, address, bio, category, image, hours, cover, map_coordinates ON company_place_editor BEGIN
       UPDATE posts SET place = NEW.place, address = NEW.address, bio = NEW.bio,
         category = NEW.category, image = NEW.image WHERE id = OLD.id;
       DELETE FROM company_place_covers WHERE post_id = OLD.id AND OLD.image <> NEW.image;
@@ -54,11 +62,26 @@ const schema = `
       INSERT INTO working_hours (post_id, label, value)
         SELECT OLD.id, json_extract(value, '$.label'), json_extract(value, '$.value')
         FROM json_each(NEW.hours) ORDER BY CAST(key AS INTEGER);
+      DELETE FROM map_places WHERE post_id = OLD.id AND json_type(NEW.map_coordinates) = 'null';
+      INSERT INTO map_places (id, name, latitude, longitude, creator_id, post_id, created_at, review_status)
+        SELECT 'company-' || OLD.id, NEW.place, json_extract(NEW.map_coordinates, '$.latitude'),
+          json_extract(NEW.map_coordinates, '$.longitude'), OLD.owner_id, OLD.id,
+          STRFTIME('%Y-%m-%dT%H:%M:%fZ', 'now'), 'approved'
+        WHERE json_type(NEW.map_coordinates) = 'object'
+        ON CONFLICT(post_id) DO UPDATE SET name = excluded.name,
+          latitude = excluded.latitude, longitude = excluded.longitude, review_status = 'approved';
+      UPDATE map_places SET name = NEW.place
+        WHERE post_id = OLD.id AND name = OLD.place AND NEW.place <> OLD.place AND NEW.map_coordinates IS NULL;
     END;
 
   CREATE TRIGGER IF NOT EXISTS company_place_cover_delete
     AFTER DELETE ON posts BEGIN
       DELETE FROM company_place_covers WHERE post_id = OLD.id;
+    END;
+
+  CREATE TRIGGER IF NOT EXISTS remove_deleted_post_map_place
+    AFTER DELETE ON posts BEGIN
+      DELETE FROM map_places WHERE post_id = OLD.id;
     END;
 
   COMMIT;
@@ -79,7 +102,7 @@ function isImageUrl(value) {
 }
 
 function parseFields(body, id, current) {
-  const { place, address = '', bio = '', category = '', image, coverBase64, workingHours = [] } = body ?? {};
+  const { place, address = '', bio = '', category = '', image, coverBase64, workingHours = [], coordinates } = body ?? {};
   if (typeof place !== 'string' || !place.trim() || place.trim().length > 200) {
     return { error: 'Укажите название заведения длиной до 200 символов.' };
   }
@@ -89,6 +112,9 @@ function parseFields(body, id, current) {
   }
   if (typeof category !== 'string' || (!categories.has(category) && category !== current?.category)) {
     return { error: 'Выберите категорию из списка.' };
+  }
+  if (coordinates != null && !validCoordinates(coordinates.latitude, coordinates.longitude)) {
+    return { error: 'Укажите корректные координаты точки на карте.' };
   }
   if (image !== undefined && (typeof image !== 'string' ||
       (image.trim() && image.trim() !== current?.image && !isImageUrl(image.trim())))) {
@@ -109,7 +135,8 @@ function parseFields(body, id, current) {
   let imageValue = current && (image === undefined || image.trim() === current.image) ? null : image?.trim() || defaultImage;
   if (cover) imageValue = coverPath(id, createHash('sha256').update(cover).digest('hex'));
   return {
-    values: [place.trim(), address.trim(), bio.trim(), category, imageValue, JSON.stringify(hours), cover],
+    values: [place.trim(), address.trim(), bio.trim(), category, imageValue, JSON.stringify(hours), cover,
+      JSON.stringify(coordinates) ?? null],
   };
 }
 
@@ -134,13 +161,20 @@ module.exports = function createCompanyPlaces(db, auth, databaseService) {
   });
 
   const findOwned = (ownerId, id) => get(
-    'SELECT id, category, image FROM company_place_editor WHERE owner_id = ? AND id = ?',
+    'SELECT id, category, image, address, latitude, longitude FROM company_place_editor WHERE owner_id = ? AND id = ?',
     [ownerId, id]
   );
 
+  async function getPlace(row) {
+    if (!row) return null;
+    const place = await databaseService.getPostById(row.id);
+    const { address, latitude, longitude } = row;
+    const coordinates = validCoordinates(latitude, longitude) ? { latitude, longitude } : null;
+    return place && { ...place, address, coordinates };
+  }
+
   async function getOwnedPlace(ownerId, id) {
-    const row = await findOwned(ownerId, id);
-    return row ? databaseService.getPostById(row.id) : null;
+    return getPlace(await findOwned(ownerId, id));
   }
 
   router.use(auth, (req, res, next) => {
@@ -159,10 +193,10 @@ module.exports = function createCompanyPlaces(db, auth, databaseService) {
 
   router.get('/', async (_req, res) => {
     const rows = await all(
-      'SELECT id FROM company_place_editor WHERE owner_id = ? ORDER BY place COLLATE NOCASE, id',
+      'SELECT id, address, latitude, longitude FROM company_place_editor WHERE owner_id = ? ORDER BY place COLLATE NOCASE, id',
       [res.locals.ownerId]
     );
-    const places = await Promise.all(rows.map(row => databaseService.getPostById(row.id)));
+    const places = await Promise.all(rows.map(getPlace));
     res.json(places.filter(Boolean));
   });
 
@@ -190,10 +224,10 @@ module.exports = function createCompanyPlaces(db, auth, databaseService) {
 
     await run(`
       INSERT INTO company_place_editor (
-        owner_id, id, user, userAvatar, userHandle, place, address, bio, category, image, hours, cover
+        owner_id, id, user, userAvatar, userHandle, place, address, bio, category, image, hours, cover, map_coordinates
       )
       SELECT ?, ?, name, ?, LOWER(CASE WHEN INSTR(email, '@') > 0
-        THEN SUBSTR(email, 1, INSTR(email, '@') - 1) ELSE email END), ?, ?, ?, ?, ?, ?, ?
+        THEN SUBSTR(email, 1, INSTR(email, '@') - 1) ELSE email END), ?, ?, ?, ?, ?, ?, ?, ?
       FROM users
       WHERE id = ? AND role = 'company'
         AND NOT EXISTS (SELECT 1 FROM posts WHERE id = ?)
@@ -216,7 +250,7 @@ module.exports = function createCompanyPlaces(db, auth, databaseService) {
 
     await run(`
       UPDATE company_place_editor
-      SET place = ?, address = ?, bio = ?, category = ?, image = COALESCE(?, image), hours = ?, cover = ?
+      SET place = ?, address = ?, bio = ?, category = ?, image = COALESCE(?, image), hours = ?, cover = ?, map_coordinates = ?
       WHERE owner_id = ? AND id = ?
     `, [...fields.values, ownerId, placeId]);
     const updated = await getOwnedPlace(ownerId, placeId);

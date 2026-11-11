@@ -135,6 +135,7 @@ test('Компания управляет только своими карточ
     requestId: 'draft-idempotency-01',
     place: 'Кофейня на углу',
     address: 'Центральная, 5',
+    coordinates: { latitude: 48.0158, longitude: 37.8026 },
     bio: 'Кофе и выпечка',
     category: 'cafe',
     workingHours: hours,
@@ -146,21 +147,31 @@ test('Компания управляет только своими карточ
   ]);
   assert.equal(created.id, repeated.id);
   assert.equal(created.user, 'Кофейня');
+  assert.deepEqual(created.coordinates, draft.coordinates);
   assert.match(created.image, /^data:image\//);
   assert.deepEqual((await api.request(path, 200, { token: owner })).map(place => place.id), [created.id]);
   assert.deepEqual(await api.request(path, 200, { token: other }), []);
 
   const editPath = `${path}/${created.id}`;
   const publicPath = `/api/posts/${created.id}`;
+  async function linkedPin(postId = created.id) {
+    const pins = (await api.request('/api/map/places', 200)).filter(pin => pin.postId === postId);
+    assert.ok(pins.length <= 1, 'У карточки должна быть одна метка');
+    return pins[0];
+  }
+  const createdPin = await linkedPin();
+  assert.deepEqual([createdPin.name, createdPin.address, createdPin.reviewStatus], [draft.place, draft.address, 'approved']);
+  assert.deepEqual({ latitude: createdPin.latitude, longitude: createdPin.longitude }, draft.coordinates);
   assert.deepEqual((await api.request(publicPath, 200)).workingHours, hours);
   await api.request(editPath, 404, { token: other });
-  await api.request(editPath, 404, { token: other, method: 'PUT', body: { ...draft, place: 'Чужое изменение' } });
+  await api.request(editPath, 404, { token: other, method: 'PUT', body: { ...draft, place: 'Чужое изменение', coordinates: null } });
   await api.request(editPath, 403, { token: visitor, method: 'PUT', body: draft });
 
   const next = {
     ...draft,
     place: 'Обновлённая кофейня',
     address: 'Центральная, 7',
+    coordinates: { latitude: 48.017, longitude: 37.802 },
     bio: 'Завтраки до обеда',
     image: 'https://example.invalid/cafe.jpg',
     workingHours: [{ label: 'Ежедневно', value: '10:00–20:00' }],
@@ -168,10 +179,20 @@ test('Компания управляет только своими карточ
   await api.request(editPath, 400, {
     token: owner, method: 'PUT', body: { ...next, workingHours: [{ label: '', value: '10:00' }] },
   });
+  await api.request(editPath, 400, {
+    token: owner, method: 'PUT', body: { ...next, coordinates: { latitude: 91, longitude: 37.8026 } },
+  });
   assert.equal((await api.request(publicPath, 200)).place, draft.place);
   assert.deepEqual((await api.request(publicPath, 200)).workingHours, hours);
+  assert.deepEqual(await linkedPin(), createdPin);
   const saved = await api.request(editPath, 200, { token: owner, method: 'PUT', body: next });
-  assert.deepEqual(await api.request(publicPath, 200), saved);
+  const { coordinates: savedCoordinates, ...savedCard } = saved;
+  assert.deepEqual(await api.request(publicPath, 200), savedCard);
+  assert.deepEqual(savedCoordinates, next.coordinates);
+  const movedPin = await linkedPin();
+  assert.equal(movedPin.id, createdPin.id);
+  assert.deepEqual({ latitude: movedPin.latitude, longitude: movedPin.longitude }, next.coordinates);
+  assert.deepEqual([movedPin.name, movedPin.address], [next.place, next.address]);
   assert.deepEqual(saved.workingHours, next.workingHours);
   assert.equal(saved.image, next.image);
 
@@ -184,30 +205,50 @@ test('Компания управляет только своими карточ
   assert.match(covered.image, /^\/api\/place-covers\//);
   await api.requestCover(covered.image, 200);
   const keptCover = await api.request(editPath, 200, {
-    token: owner, method: 'PUT', body: { ...next, image: undefined, bio: 'Обновлённое описание' },
+    token: owner, method: 'PUT', body: { ...next, coordinates: undefined, image: undefined, bio: 'Обновлённое описание' },
   });
   assert.equal(keptCover.image, covered.image);
+  assert.deepEqual(keptCover.coordinates, next.coordinates);
 
   const seed = await api.request('/api/posts/1', 200);
+  const adminBeforeRestart = await api.login('admin@local.test', 'demo1234');
+  await api.request('/api/map/places', 201, { token: adminBeforeRestart, method: 'POST', body: {
+    postId: '1', name: seed.place, ...draft.coordinates,
+  } });
+  const adminPin = await linkedPin('1');
+  const ownedSeed = await api.request(`${path}/1`, 200, { token: demoCompany });
+  assert.deepEqual(ownedSeed.coordinates, draft.coordinates);
   const updatedSeed = await api.request(`${path}/1`, 200, {
     token: demoCompany,
     method: 'PUT',
-    body: { ...seed, bio: 'Новое описание', workingHours: [] },
+    body: { ...seed, bio: 'Новое описание', workingHours: [], coordinates: next.coordinates },
   });
   assert.equal(updatedSeed.bio, 'Новое описание');
   assert.deepEqual(updatedSeed.gallery, seed.gallery);
   assert.deepEqual(updatedSeed.reviews, seed.reviews);
   assert.deepEqual(updatedSeed.workingHours, []);
+  assert.deepEqual(updatedSeed.coordinates, next.coordinates);
+  assert.equal((await linkedPin('1')).id, adminPin.id);
 
   await api.stop();
   api = await startApi(database);
   const freshToken = await api.login('cafe@owner.invalid');
   assert.deepEqual(await api.request(editPath, 200, { token: freshToken }), keptCover);
-  assert.deepEqual(await api.request(publicPath, 200), keptCover);
+  const { coordinates: persistedCoordinates, ...persistedCard } = keptCover;
+  assert.deepEqual(await api.request(publicPath, 200), persistedCard);
+  assert.deepEqual(persistedCoordinates, next.coordinates);
+  assert.equal((await linkedPin()).id, createdPin.id);
   await api.requestCover(keptCover.image, 200);
+
+  const unpinned = await api.request(editPath, 200, { token: freshToken, method: 'PUT', body: { ...next, coordinates: null, image: undefined } });
+  assert.equal(unpinned.coordinates, null);
+  assert.equal(await linkedPin(), undefined);
+  await api.request(editPath, 200, { token: freshToken, method: 'PUT', body: { ...next, image: undefined } });
+  assert.equal((await linkedPin()).postId, created.id);
 
   const admin = await api.login('admin@local.test', 'demo1234');
   await api.request(`/api/admin/places/${created.id}`, 200, { token: admin, method: 'DELETE' });
+  assert.equal(await linkedPin(), undefined);
   assert.deepEqual(await api.request(path, 200, { token: freshToken }), []);
   await api.request(path, 409, { token: freshToken, method: 'POST', body: draft });
   await api.request(publicPath, 404);

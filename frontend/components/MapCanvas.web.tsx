@@ -14,8 +14,8 @@ export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPl
       if (event.data.type === 'ready') setReady(true);
       if (event.data.type === 'click' && Number.isFinite(event.data.latitude) && Number.isFinite(event.data.longitude)) onSelect(event.data.latitude, event.data.longitude);
       if (event.data.type === 'error') onError(String(event.data.message));
-      if (event.data.type === 'submit' && typeof event.data.id === 'string') onSubmit(event.data.id);
-      if (event.data.type === 'open-place' && typeof event.data.id === 'string') onOpenPlace(event.data.id);
+      if (event.data.type === 'submit' && typeof event.data.id === 'string') onSubmit?.(event.data.id);
+      if (event.data.type === 'open-place' && typeof event.data.id === 'string') onOpenPlace?.(event.data.id);
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);

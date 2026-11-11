@@ -64,7 +64,7 @@ export const formatCompactNumber = (number: number): string => {
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '') ||
   (Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000');
 
-export function withPlaceCoverUrl(post: Post): Post {
+export function withPlaceCoverUrl<T extends Post>(post: T): T {
   if (!post.image.startsWith('/api/place-covers/')) return post;
   return { ...post, image: `${API_BASE_URL}${post.image}` };
 }

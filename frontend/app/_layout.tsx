@@ -4,6 +4,7 @@ import { Stack, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import 'react-native-reanimated';
+import '../styles/scrollbars.css';
 
 import { AppearanceProvider, palette, useAppStyles } from '@/lib/app-appearance';
 import { FloatingNavigation } from '@/components/floating-navigation';

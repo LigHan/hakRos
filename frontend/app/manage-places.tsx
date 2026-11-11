@@ -4,10 +4,12 @@ import { launchImageLibraryAsync } from 'expo-image-picker';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, type TextInputProps } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CompanyPlaceAddress } from '@/components/company-place-address';
 import { PlaceHoursEditor } from '@/components/place-hours-editor';
-import type { Post, WorkingHours } from '@/constants/content';
-import { createCompanyPlace, getCompanyPlaces, updateCompanyPlace, type CompanyPlaceFields } from '@/lib/company-places';
+import type { WorkingHours } from '@/constants/content';
+import { createCompanyPlace, getCompanyPlaces, updateCompanyPlace, type CompanyPlace, type CompanyPlaceFields } from '@/lib/company-places';
 import { placeCategories } from '@/lib/place-categories';
 import { ApiError } from '@/lib/statistics';
 
@@ -26,13 +28,14 @@ function makeKey() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-function makeDraft(post?: Post): Draft {
+function makeDraft(post?: CompanyPlace): Draft {
   return {
     id: post?.id,
     requestId: makeKey(),
     fields: {
       place: post?.place ?? '',
       address: post?.address ?? '',
+      coordinates: post?.coordinates ?? null,
       bio: post?.bio ?? '',
       category: post?.category ?? '',
     },
@@ -98,8 +101,9 @@ function Field({ label, ...props }: TextInputProps & { label: string }) {
 
 export default function ManagePlacesScreen() {
   const router = useRouter();
+  const { bottom } = useSafeAreaInsets();
   const activeRequest = useRef<AbortController | null>(null);
-  const [places, setPlaces] = useState<Post[] | null>(null);
+  const [places, setPlaces] = useState<CompanyPlace[] | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -144,7 +148,7 @@ export default function ManagePlacesScreen() {
     return () => controller.abort();
   }, [load]));
 
-  const edit = (post?: Post) => {
+  const edit = (post?: CompanyPlace) => {
     setNotice('');
     setError('');
     setActiveHours(null);
@@ -152,7 +156,7 @@ export default function ManagePlacesScreen() {
     setDraft(makeDraft(post));
   };
 
-  const updateField = (key: keyof Draft['fields'], value: string) => {
+  const updateField = (key: 'place' | 'bio' | 'category', value: string) => {
     setDraft(current => current && { ...current, fields: { ...current.fields, [key]: value } });
   };
 
@@ -221,7 +225,8 @@ export default function ManagePlacesScreen() {
         headerTintColor: '#283618',
         headerShadowVisible: false,
       }} />
-      <ScrollView key={draft?.requestId ?? 'list'} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView key={draft?.requestId ?? 'list'} contentContainerStyle={[styles.content, { paddingBottom: 100 + bottom }]}
+        keyboardShouldPersistTaps="handled">
         {error && (!draft || needsLogin) ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         {needsLogin && <Action title="Войти" onPress={() => router.push('/login')} />}
         {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
@@ -232,8 +237,8 @@ export default function ManagePlacesScreen() {
           <View style={styles.card}>
             <Field label="Название заведения" value={draft.fields.place} maxLength={200} editable={!saving}
               onChangeText={text => updateField('place', text)} />
-            <Field label="Адрес" value={draft.fields.address} maxLength={2000} editable={!saving}
-              onChangeText={text => updateField('address', text)} />
+            <CompanyPlaceAddress address={draft.fields.address} coordinates={draft.fields.coordinates ?? null} disabled={saving}
+              onChange={value => setDraft(current => current && { ...current, fields: { ...current.fields, ...value } })} />
             <Field label="Описание" value={draft.fields.bio} maxLength={2000} multiline editable={!saving}
               onChangeText={text => updateField('bio', text)} />
             <View style={styles.field}>
@@ -314,7 +319,7 @@ export default function ManagePlacesScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FFFCED' },
-  content: { padding: 20, paddingBottom: 40, gap: 16 },
+  content: { padding: 20, gap: 16 },
   card: { borderRadius: 24, backgroundColor: '#FFFCED', padding: 20, gap: 14 },
   title: { color: '#283618', fontSize: 18, fontWeight: '700' },
   detail: { color: '#6F7457', fontSize: 14 },

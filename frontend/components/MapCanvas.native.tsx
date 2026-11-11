@@ -15,8 +15,8 @@ export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPl
       if (data.type === 'ready') setReady(true);
       if (data.type === 'click' && Number.isFinite(data.latitude) && Number.isFinite(data.longitude)) onSelect(data.latitude, data.longitude);
       if (data.type === 'error') onError(String(data.message));
-      if (data.type === 'submit' && typeof data.id === 'string') onSubmit(data.id);
-      if (data.type === 'open-place' && typeof data.id === 'string') onOpenPlace(data.id);
+      if (data.type === 'submit' && typeof data.id === 'string') onSubmit?.(data.id);
+      if (data.type === 'open-place' && typeof data.id === 'string') onOpenPlace?.(data.id);
     } catch { onError('Некорректный ответ карты'); }
   };
   return <WebView<WebViewProps> ref={frame} source={{ uri: `${API_URL}/map-assets/` }} onLoadStart={() => setReady(false)} onMessage={receive} onError={() => onError('Не удалось загрузить карту')} style={{ flex: 1 }} />;

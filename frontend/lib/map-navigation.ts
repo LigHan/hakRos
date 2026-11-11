@@ -3,7 +3,8 @@ import * as Location from 'expo-location';
 import type { MapCoordinates, MapPoint } from '@/components/MapCanvas.types';
 import { api } from '@/lib/statistics';
 
-export type MapSearchResult = MapCoordinates & { id: string; title: string; subtitle: string; pointId?: string };
+export type MapSearchResult = MapCoordinates & { id: string; title: string; subtitle: string; address?: string | null; pointId?: string };
+export type AddressSuggestion = MapSearchResult & { address: string };
 export type TravelMode = 'walk' | 'drive';
 export type MapRoute = { coordinates: [number, number][]; distance: number; duration: number };
 export type RoutePlan = {
@@ -18,6 +19,16 @@ export function placeSearchResult(point: MapPoint): MapSearchResult {
 
 export function findAddresses(query: string, signal?: AbortSignal): Promise<MapSearchResult[]> {
   return api('/api/map/search?q=' + encodeURIComponent(query), { signal });
+}
+
+export async function findAddressSuggestions(query: string, signal: AbortSignal): Promise<AddressSuggestion[]> {
+  const results = await findAddresses(query, signal);
+  return results.filter((result): result is AddressSuggestion => typeof result.address === 'string' && Boolean(result.address));
+}
+
+export async function addressAtPoint({ latitude, longitude }: MapCoordinates, signal: AbortSignal): Promise<string | null> {
+  const result = await api(`/api/map/reverse?lat=${latitude}&lon=${longitude}`, { signal });
+  return result.address;
 }
 
 export function findRoute(from: MapCoordinates, to: MapCoordinates, mode: TravelMode, signal?: AbortSignal): Promise<MapRoute> {

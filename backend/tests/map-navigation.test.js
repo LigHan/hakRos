@@ -21,6 +21,7 @@ async function navigationApi(t, provider) {
   app.use(express.json());
   app.use('/api/map', createMapNavigationRouter({
     geocoderUrl: upstream + '/api/',
+    reverseGeocoderUrl: '',
     namesForPoint: createRussianNameLookup({ tileJsonUrl: upstream + '/planet' }),
     walkingUrl: upstream + '/walk/route/v1/driving/',
     drivingUrl: upstream + '/drive/route/v1/driving/',
@@ -91,6 +92,7 @@ test('ищет точный дом и показывает русские наз
     id: '37.81,48.03',
     title: 'улица Ионина, 23',
     subtitle: 'Донецк, Киевский район',
+    address: 'улица Ионина, 23, Донецк, Киевский район',
     latitude: 48.03,
     longitude: 37.81,
   }]);
@@ -102,7 +104,42 @@ test('ищет точный дом и показывает русские наз
   const unlabelled = await fetch(base + '/search?q=' + encodeURIComponent('Садова 23')).then(res => res.json());
   assert.equal(unlabelled[0].title, 'Дом №23');
   assert.equal(unlabelled[0].subtitle, 'Донецк, Киевский район, 48.03000, 37.81000');
+  assert.equal(unlabelled[0].address, null);
   assert.equal(tileRequests, 1);
+});
+
+test('определяет русский адрес без подмены выбранной точки', async t => {
+  const provider = express();
+  const requests = [];
+  provider.get('/reverse', (req, res) => {
+    requests.push({ ...req.query, language: req.get('Accept-Language') });
+    if (req.query.lat === '0') return res.json({ features: [house('Садова вулиця', '23')] });
+    if (req.query.lat === '1') return res.status(503).json({ error: 'Unavailable' });
+    res.json({ features: [house('Садова вулиця', '24', 37.82), house('Іоніна вулиця', '23')] });
+  });
+  provider.get('/planet', (req, res) => {
+    res.json({ maxzoom: 14, tiles: ['http://' + req.get('host') + '/tiles/{z}/{x}/{y}.pbf'] });
+  });
+  provider.get('/tiles/:zoom/:x/:y.pbf', (_req, res) => res.send(namesTile()));
+  const base = await navigationApi(t, provider);
+
+  for (const query of ['?lat=&lon=37', '?lat=91&lon=37', '?lat=48&lon=181', '?lat=48&lat=49&lon=37', '?lat=0x30&lon=37']) {
+    assert.equal((await fetch(base + '/reverse' + query)).status, 400);
+  }
+  assert.equal(requests.length, 0);
+
+  const found = await fetch(base + '/reverse?lat=48.03127&lon=37.81456');
+  assert.equal(found.status, 200);
+  assert.equal(found.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await found.json(), { address: 'улица Ионина, 23, Донецк, Киевский район' });
+  assert.deepEqual(requests[0], { lat: '48.03127', lon: '37.81456', limit: '5', radius: '0.25', language: 'ru' });
+
+  const missing = await fetch(base + '/reverse?lat=0&lon=37');
+  assert.equal(missing.status, 200);
+  assert.deepEqual(await missing.json(), { address: null });
+  const unavailable = await fetch(base + '/reverse?lat=1&lon=37');
+  assert.equal(unavailable.status, 502);
+  assert.match((await unavailable.json()).error, /введите адрес вручную/);
 });
 
 test('передаёт точки в правильный профиль OSRM и возвращает линию маршрута', async t => {

@@ -17,6 +17,10 @@ function validCoordinates(latitude, longitude) {
     Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
 }
 
+function coordinateFromQuery(value) {
+  return typeof value === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value) ? Number(value) : NaN;
+}
+
 class MapServiceError extends Error {
   constructor(status, message) {
     super(message);
@@ -93,7 +97,7 @@ function addressCandidates(features, query) {
   const results = new Map();
   for (const feature of features) {
     const place = feature?.properties;
-    if (!place || feature.geometry?.type !== 'Point' || !addressMatches(place, query)) continue;
+    if (!place || feature.geometry?.type !== 'Point' || (query && !addressMatches(place, query))) continue;
     if (!Array.isArray(feature.geometry.coordinates)) continue;
     const [longitude, latitude] = feature.geometry.coordinates;
     if (!validCoordinates(latitude, longitude)) continue;
@@ -116,17 +120,19 @@ async function localizedAddress({ place, ...point }, namesForPoint) {
   const name = (field, group) => readRussianLabel(place[field + ':ru']) || lookup(place[field], group);
   const street = formatStreet(name('street', 'street'));
   const house = readRussianLabel(place.housenumber);
-  const address = street ? [street, house].filter(Boolean).join(', ') : '';
+  const streetAddress = street ? [street, house].filter(Boolean).join(', ') : '';
   const placeName = place.type === 'street'
     ? formatStreet(name('name', 'street')) : name('name', 'place') || name('name', 'area');
-  const titleFromData = place.type === 'house' ? address : placeName || address;
+  const titleFromData = place.type === 'house' ? streetAddress : placeName || streetAddress;
   const title = titleFromData || (house ? 'Дом №' + house : place.type === 'street' ? 'Улица на карте' : 'Место на карте');
   const locality = ['city', 'locality', 'county', 'state', 'country'].map(field => name(field, 'area')).find(Boolean);
   const district = name('district', 'area');
   const coordinates = point.latitude.toFixed(5) + ', ' + point.longitude.toFixed(5);
-  const parts = [address, locality, district, titleFromData ? '' : coordinates];
+  const parts = [streetAddress, locality, district, titleFromData ? '' : coordinates];
   const subtitle = [...new Set(parts.filter(part => part && part !== title))].join(', ');
-  return { ...point, title, subtitle };
+  const addressStreet = streetAddress || (place.type === 'street' ? placeName : '');
+  const address = addressStreet ? [...new Set([addressStreet, locality, district].filter(Boolean))].join(', ') : null;
+  return { ...point, title, subtitle, address };
 }
 
 function coordinatesParam(point) {
@@ -140,6 +146,7 @@ function sendServiceError(res, error, fallback) {
 
 function createMapNavigationRouter({
   geocoderUrl = process.env.MAP_GEOCODER_URL?.trim() || defaultGeocoder,
+  reverseGeocoderUrl = process.env.MAP_REVERSE_GEOCODER_URL?.trim(),
   namesForPoint = createRussianNameLookup(),
   walkingUrl = process.env.MAP_WALK_ROUTER_URL?.trim() || defaultRouter + '/routed-foot/route/v1/driving/',
   drivingUrl = process.env.MAP_DRIVE_ROUTER_URL?.trim() || defaultRouter + '/routed-car/route/v1/driving/',
@@ -149,15 +156,19 @@ function createMapNavigationRouter({
   const route = providerClient();
   const cache = new Map();
 
+  async function photonFeatures(url) {
+    const { ok, data } = await geocode(url);
+    if (!ok || !Array.isArray(data?.features)) throw new Error('Некорректный ответ геокодера');
+    return data.features;
+  }
+
   async function searchPhoton(query) {
     const url = new URL(geocoderUrl);
     url.searchParams.set('q', query);
     url.searchParams.set('lat', String(cityCenter.latitude));
     url.searchParams.set('lon', String(cityCenter.longitude));
     url.searchParams.set('limit', '8');
-    const { ok, data } = await geocode(url);
-    if (!ok || !Array.isArray(data?.features)) throw new Error('Некорректный ответ геокодера');
-    return data.features;
+    return photonFeatures(url);
   }
 
   router.get('/search', async (req, res) => {
@@ -183,6 +194,31 @@ function createMapNavigationRouter({
       return res.json(await Promise.all(candidates.map(candidate => localizedAddress(candidate, namesForPoint))));
     } catch (error) {
       return sendServiceError(res, error, 'Поиск адресов временно недоступен. Попробуйте ещё раз.');
+    }
+  });
+
+  router.get('/reverse', async (req, res) => {
+    const latitude = coordinateFromQuery(req.query.lat);
+    const longitude = coordinateFromQuery(req.query.lon);
+    if (!validCoordinates(latitude, longitude)) {
+      return res.status(400).json({ error: 'Укажите корректные координаты точки на карте.' });
+    }
+    res.set('Cache-Control', 'no-store');
+
+    try {
+      const url = new URL(reverseGeocoderUrl || geocoderUrl);
+      if (!reverseGeocoderUrl) url.pathname = url.pathname.replace(/\/[^/]*\/?$/, '/reverse');
+      url.searchParams.set('lat', String(latitude));
+      url.searchParams.set('lon', String(longitude));
+      url.searchParams.set('limit', '5');
+      url.searchParams.set('radius', '0.25');
+      for (const candidate of addressCandidates(await photonFeatures(url))) {
+        const { address } = await localizedAddress(candidate, namesForPoint);
+        if (address) return res.json({ address });
+      }
+      return res.json({ address: null });
+    } catch (error) {
+      return sendServiceError(res, error, 'Не удалось определить адрес. Попробуйте снова или введите адрес вручную.');
     }
   });
 

@@ -13,7 +13,7 @@ async function withDetails(post) {
   const [gallery, tags, workingHours, reviews, contact] = await Promise.all([
     all('SELECT image_url FROM gallery WHERE post_id = ? ORDER BY display_order', params),
     all('SELECT tag FROM tags WHERE post_id = ?', params),
-    all('SELECT label, value FROM working_hours WHERE post_id = ?', params),
+    all('SELECT label, value FROM working_hours WHERE post_id = ? ORDER BY id', params),
     all('SELECT id, author, comment, rating, date FROM reviews WHERE post_id = ?', params),
     all('SELECT label, value, icon FROM contact_info WHERE post_id = ?', params),
   ]);

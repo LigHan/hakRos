@@ -494,7 +494,7 @@ function PlaceDetails({ id }: { id?: string }) {
         <Pressable style={styles.galleryOverlay} onPress={closeGallery}>
           <Pressable style={styles.galleryContent} onPress={event => event.stopPropagation()}>
             <Image
-              source={{ uri: galleryImages[activeImageIndex] }}
+              source={{ uri: galleryImages[activeImageIndex] ?? post.image }}
               style={styles.galleryFullImage}
             />
 

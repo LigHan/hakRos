@@ -9,10 +9,9 @@
   <style>
     html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#eaf1fa}
     #status{position:absolute;top:12px;left:12px;right:12px;background:white;color:#334155;padding:10px;border-radius:10px;z-index:2;display:none}
-    .pin{border:3px solid #FEFAE0;box-shadow:0 2px 8px #28361866;width:26px;height:26px;border-radius:50%;background:#606C38;cursor:pointer}
-    .person{background:#BC6C25}.chosen{background:#DDA15E;width:20px;height:20px}
-    .maplibregl-ctrl-top-right,.maplibregl-ctrl-top-left{top:172px}
-    .maplibregl-ctrl-attrib{font-size:11px}
+    .pin{border:3px solid white;box-shadow:0 2px 8px #33415566;width:26px;height:26px;border-radius:50%;background:#2563eb;cursor:pointer}
+    .person{background:#ff2d55}.chosen{background:#ffb800;width:20px;height:20px}
+    .maplibregl-ctrl-bottom-right{bottom:6px}.maplibregl-ctrl-attrib{font-size:11px}
   </style>
 </head>
 <body><div id="map"></div><div id="status" role="alert"></div>
@@ -33,6 +32,8 @@
       const element = document.createElement('button');
       element.className = 'pin' + (point.kind === 'person' ? ' person' : '');
       element.setAttribute('aria-label', point.name);
+      // Клик по маркеру открывает его карточку и не выбирает новую точку карты.
+      element.addEventListener('click', event => event.stopPropagation());
       const content = document.createElement('div');
       const title = document.createElement('strong'); title.textContent = point.name;
       const details = document.createElement('div');
@@ -50,8 +51,6 @@
       }
       const marker = new maplibregl.Marker({element}).setLngLat([point.longitude, point.latitude])
         .setPopup(new maplibregl.Popup({offset: 20}).setDOMContent(content)).addTo(map);
-      // The click is stopped before MapLibre's map handler, so open the popup explicitly.
-      element.addEventListener('click', event => { event.stopPropagation(); marker.togglePopup(); });
       markers.push(marker);
     }
     if (state.selected) {
@@ -153,9 +152,8 @@
   }
   try {
     if (!window.maplibregl) throw new Error('Не удалось загрузить библиотеку карты');
-    map = new maplibregl.Map({container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[37.8026,48.0158], zoom:12, attributionControl:false});
+    map = new maplibregl.Map({container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[37.8026,48.0158], zoom:12});
     map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
-    map.addControl(new maplibregl.AttributionControl({compact:true}), 'top-left');
     map.on('load', async () => {
       // Сохраняем структуру и подписи поставщика, меняя цвета основных слоёв.
       for (const layer of map.getStyle().layers) {

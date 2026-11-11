@@ -9,6 +9,7 @@ const statistics = require('./statistics')(db);
 const connections = require('./connections')(db, statistics.auth);
 const map = require('./map')(db, statistics.auth, statistics.optionalAuth);
 const path = require('node:path');
+const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,7 @@ const endpoints = [
   'POST /register',
   'POST /login',
   'GET /api/connections',
+  'GET /api/company/places',
 ];
 
 app.use(cors({
@@ -31,6 +33,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+app.use('/api/company/places', companyPlaces.router);
 app.use(express.json());
 app.use('/map-assets', express.static(path.join(__dirname, 'map-assets')));
 app.use('/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist')));
@@ -51,6 +54,8 @@ app.get('/api/posts', async (_req, res) => {
 app.get('/api/stories', async (_req, res) => {
   res.json(await databaseService.getStories());
 });
+
+app.get('/api/place-covers/:placeId/:version', companyPlaces.getCover);
 
 app.get('/api/posts/:id', async (req, res) => {
   const post = await databaseService.getPostById(req.params.id);
@@ -165,6 +170,7 @@ db.ready.then(async () => {
   await statistics.initialize();
   await connections.initialize();
   await map.initialize();
+  await companyPlaces.initialize();
   const server = app.listen(PORT, HOST, error => {
     if (error) {
       reportStartupError(error);

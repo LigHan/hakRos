@@ -1,13 +1,10 @@
-import { useAppStyles } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Image,
   Platform,
-  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,45 +12,36 @@ import {
   View,
 } from 'react-native';
 
+import { getCompanyPlaces } from '@/lib/company-places';
 import { getConnections, type Connections } from '@/lib/connections';
-import { ApiError } from '@/lib/statistics';
+import { ApiError, authorized } from '@/lib/statistics';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
 import {
   getFavoritePosts,
   getFavoritePostsCount,
+  getLikedPosts,
+  getLikedPostsCount
 } from '@/lib/likes-favorites';
 import {
+  clearUserSession,
   getUserSession,
   type UserSession,
 } from '@/lib/user-session';
 
-// Visual reference data belongs only to the dedicated local demo account.
-const demoProfile = {
-  name: 'Мария Лебедева',
-  subtitle: 'Студентка МГУ',
-  status: 'Ищу новые места после пар ✨',
-  avatar: 'https://images.unsplash.com/photo-1747671688812-76d7bca21f34?auto=format&fit=crop&w=300&q=80',
-  places: [
-    { name: 'Кофейня «Клевер»', rating: '4,8', tag: 'Кофейни', saved: true, image: 'https://images.unsplash.com/photo-1777451441095-c7ef2f875929?auto=format&fit=crop&w=320&q=80' },
-    { name: 'Скалодром «Высота»', rating: '4,8', tag: 'Спорт', saved: false, image: 'https://images.unsplash.com/photo-1756821725793-c90c88407c59?auto=format&fit=crop&w=320&q=80' },
-    { name: 'Музей современного искусства', rating: '4,7', tag: 'Выставки', saved: true, image: 'https://images.unsplash.com/photo-1635172562604-3ba8826afc34?auto=format&fit=crop&w=320&q=80' },
-  ],
-};
-
 export default function ProfileScreen() {
-  const styles = useAppStyles(baseStyles);
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [session, setSession] = useState<UserSession | null>(null);
-  const [profileTab, setProfileTab] = useState<'places' | 'posts' | 'stories'>('places');
+  const [likedPosts, setLikedPosts] = useState<string[]>([]);
   const [favoritePosts, setFavoritePosts] = useState<string[]>([]);
+  const [likedCount, setLikedCount] = useState(0);
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connections, setConnections] = useState<Connections | null>(null);
+  const [connectionsError, setConnectionsError] = useState('');
 
   useFocusEffect(
     useCallback(() => {
@@ -63,6 +51,7 @@ export default function ProfileScreen() {
         setLoading(true);
         setError(null);
         setConnections(null);
+        setConnectionsError('');
 
         const userSession = await getUserSession();
         if (controller.signal.aborted) return;
@@ -80,13 +69,17 @@ export default function ProfileScreen() {
           // Загружаем посты из API бэкенда
           let postsData: Post[];
           try {
-            postsData = await databaseService.getPosts();
+            postsData = userSession.role === 'company'
+              ? await getCompanyPlaces(controller.signal)
+              : await databaseService.getPosts();
             console.log('✅ Посты загружены с бэкенда:', postsData.length);
           } catch (apiError) {
             console.warn('⚠️ Бэкенд недоступен, используем пустые данные:', apiError);
             if (controller.signal.aborted) return;
             postsData = [];
-            setError('Бэкенд временно недоступен. Некоторые данные могут быть недоступны.');
+            setError(apiError instanceof ApiError && apiError.status === 401
+              ? 'Войдите снова, чтобы загрузить заведения.'
+              : 'Бэкенд временно недоступен. Некоторые данные могут быть недоступны.');
           }
 
           if (controller.signal.aborted) return;
@@ -95,16 +88,18 @@ export default function ProfileScreen() {
           const connectionsRequest = userSession.role === 'user'
             ? getConnections(controller.signal).catch(cause => {
               if (!controller.signal.aborted) {
-                console.warn(cause instanceof ApiError && cause.status === 401
-                  ? 'Войдите снова, чтобы загрузить друзей.'
-                  : 'Не удалось загрузить друзей.');
+                setConnectionsError(cause instanceof ApiError && cause.status === 401
+                  ? 'Войдите снова, чтобы загрузить подписки.'
+                  : 'Не удалось загрузить подписки.');
               }
               return null;
             })
             : Promise.resolve(null);
 
-          const [favorites, favoriteCount, connectionsData] = await Promise.all([
+          const [liked, favorites, likedCount, favoriteCount, connectionsData] = await Promise.all([
+            getLikedPosts(),
             getFavoritePosts(),
+            getLikedPostsCount(),
             getFavoritePostsCount(),
             connectionsRequest,
           ]);
@@ -112,11 +107,15 @@ export default function ProfileScreen() {
           setConnections(connectionsData);
 
           console.log('📊 Данные профиля загружены:', {
+            liked: liked.length,
             favorites: favorites.length,
+            likedCount,
             favoriteCount
           });
 
+          setLikedPosts(liked);
           setFavoritePosts(favorites);
+          setLikedCount(likedCount);
           setFavoriteCount(favoriteCount);
         } catch (error) {
           console.error('❌ Ошибка загрузки данных профиля:', error);
@@ -131,9 +130,9 @@ export default function ProfileScreen() {
     }, [router])
   );
 
-  const sessionHandle = session?.handle ?? '';
   const isCompany = session?.accountType === 'company';
-  const isDemoProfile = session?.email === 'demo-ef9e4f@hakros.local';
+  const subscriptions = connections?.subscriptions ?? [];
+  const subscriptionCount = connections?.subscriptions.length;
 
   // Используем данные для получения постов
   const favorites = useMemo(
@@ -141,14 +140,12 @@ export default function ProfileScreen() {
     [favoritePosts, allPosts]
   );
 
-  // Для компаний: фильтруем посты по userHandle (username компании)
-  const companyPosts = useMemo(
-    () =>
-      isCompany && session
-        ? allPosts.filter(post => post.userHandle === sessionHandle)
-        : [],
-    [isCompany, session, allPosts, sessionHandle]
+  const liked = useMemo(
+    () => allPosts.filter(post => likedPosts.includes(post.id)),
+    [likedPosts, allPosts]
   );
+
+  const companyPosts = useMemo(() => isCompany ? allPosts : [], [isCompany, allPosts]);
 
   const companyFollowers = companyPosts.reduce((sum, post) => sum + (post.followers || 0), 0);
   const companyTotalLikes = companyPosts.reduce((sum, post) => sum + (post.totalLikes || post.likes || 0), 0);
@@ -170,26 +167,25 @@ export default function ProfileScreen() {
   const headerStats = useMemo(() => {
     if (isCompany) {
       return [
-        { label: 'Постов', value: formatNumber(companyPosts.length) },
+        { label: 'Заведений', value: formatNumber(companyPosts.length) },
         { label: 'Лайков', value: formatNumber(companyTotalLikes) },
         { label: 'Подписчиков', value: formatNumber(companyFollowers) },
       ];
     }
 
-    if (isDemoProfile) return [{ label: 'постов', value: '48' }, { label: 'друзей', value: '132' }, { label: 'сохранённых', value: '27' }];
     return [
-      { label: 'постов', value: '—' },
-      { label: 'друзей', value: connections ? formatNumber(connections.friends.length) : '—' },
-      { label: 'сохранённых', value: formatNumber(favoriteCount) },
+      { label: 'Избранное', value: formatNumber(favoriteCount) },
+      { label: 'Понравилось', value: formatNumber(likedCount) },
+      { label: 'Подписки', value: subscriptionCount === undefined ? '—' : formatNumber(subscriptionCount) },
     ];
   }, [
     companyFollowers,
     companyPosts.length,
     companyTotalLikes,
-    connections,
     favoriteCount,
     isCompany,
-    isDemoProfile
+    likedCount,
+    subscriptionCount
   ]);
 
   const handleOpenCompany = (id: string) => {
@@ -204,21 +200,21 @@ export default function ProfileScreen() {
     Alert.alert('Выложить новинку', 'Скоро вы сможете делиться новинками и акциями напрямую с подписчиками.');
   };
 
-  const shareProfile = async () => {
-    const message = 'Откройте для себя новые места вместе с hakRos!';
-    try {
-      if (Platform.OS === 'web') {
-        if (navigator.share) await navigator.share({ text: message });
-        else if (navigator.clipboard) await navigator.clipboard.writeText(message);
-        else Alert.alert('Поделиться', message);
-      } else await Share.share({ message });
-    } catch (cause) { console.warn('Не удалось поделиться', cause); }
+  const handleLogout = async () => {
+    await authorized('/api/logout', {method: 'POST'}).catch(() => {});
+    await clearUserSession();
+    setSession(null);
+    setConnections(null);
+    setLikedPosts([]);
+    setFavoritePosts([]);
+    setAllPosts([]);
+    router.replace('/login');
   };
 
   if (!session || loading) {
     return (
       <ThemedView style={styles.loadingContainer}>
-        <Ionicons name="person-circle-outline" size={48} color="#606C38" />
+        <Ionicons name="person-circle-outline" size={48} color="#007AFF" />
         <Text style={styles.loadingText}>Загрузка профиля...</Text>
       </ThemedView>
     );
@@ -227,30 +223,51 @@ export default function ProfileScreen() {
   return (
     <ThemedView style={styles.container}>
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top + 8, 24) }]}
+        contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.profileHeader}>
-          <ThemedText type="title" style={styles.profileTitle}>Профиль</ThemedText>
-          <View style={styles.headerActions}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Поделиться" onPress={() => void shareProfile()} style={styles.settingsButton}><Ionicons name="share-outline" size={24} color="#283618" /></TouchableOpacity>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Настройки" onPress={() => router.push('/settings')} style={styles.settingsButton}><Ionicons name="settings-outline" size={24} color="#283618" /></TouchableOpacity>
-          </View>
-        </View>
+        {Platform.OS === 'web' && session.role === 'admin' && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/admin')} style={{ backgroundColor: '#0f172a', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Панель администратора</Text></TouchableOpacity>}
+        <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/statistics')} style={{ backgroundColor: '#2563eb', padding: 16, borderRadius: 12, marginBottom: 16 }}><Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center' }}>Открыть статистику</Text></TouchableOpacity>
+        {session.role === 'user' && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Друзья"
+            style={styles.friendsLink}
+            onPress={() => router.push('/connections')}
+          >
+            <Ionicons name="people-outline" size={22} color="#2563eb" />
+            <Text style={styles.friendsLinkLabel}>Друзья</Text>
+            {!!connections?.incomingRequests.length && (
+              <Text style={styles.friendsLinkLabel}>{connections.incomingRequests.length}</Text>
+            )}
+            <Ionicons name="chevron-forward" size={18} color="#2563eb" />
+          </TouchableOpacity>
+        )}
         {error && (
           <View style={styles.errorBanner}>
-            <Ionicons name="warning-outline" size={20} color="#BC6C25" />
+            <Ionicons name="warning-outline" size={20} color="#f59e0b" />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
+
         <View style={styles.headerCard}>
-          <View style={styles.profileIdentityRow}>
-            {isDemoProfile || session.avatar ? <Image source={{ uri: isDemoProfile ? demoProfile.avatar : session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
-            <View style={styles.profileIdentity}>
-              <ThemedText type="title" style={styles.displayName}>{isDemoProfile ? demoProfile.name : `${session.name}${session.surname && !isCompany ? ` ${session.surname}` : ''}`}</ThemedText>
-              {isDemoProfile && <Text style={styles.profileSubtitle}>{demoProfile.subtitle}</Text>}
-              {isDemoProfile && <View style={styles.accountTag}><Text style={styles.accountTagText}>{demoProfile.status}</Text></View>}
-            </View>
+          <Image
+            source={{ uri: session.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80' }}
+            style={styles.avatar}
+          />
+          <ThemedText type="title" style={styles.displayName}>
+            {session.name}
+          </ThemedText>
+          {session.surname && !isCompany && (
+            <Text style={styles.surname}>{session.surname}</Text>
+          )}
+          <Text style={styles.handle}>@{session.handle}</Text>
+          <Text style={styles.email}>{session.email}</Text>
+          <View style={styles.accountTag}>
+            <Ionicons name={isCompany ? 'business' : 'person'} size={16} color="#2563eb" />
+            <Text style={styles.accountTagText}>
+              {isCompany ? 'Аккаунт компании' : 'Личный аккаунт'}
+            </Text>
           </View>
           <View style={styles.statsRow}>
             {headerStats.map(stat => (
@@ -260,27 +277,44 @@ export default function ProfileScreen() {
               </View>
             ))}
           </View>
-          {isCompany && companyRecentLikes > 0 && <Text style={styles.subStatNote}>{`+${formatNumber(companyRecentLikes)} лайков на последних постах`}</Text>}
+          {isCompany && companyRecentLikes > 0 && (
+            <Text style={styles.subStatNote}>
+              {`+${formatNumber(companyRecentLikes)} лайков на последних постах`}
+            </Text>
+          )}
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} activeOpacity={0.85}>
+            <Ionicons name="log-out-outline" size={18} color="#ef4444" />
+            <Text style={styles.logoutText}>Выйти из аккаунта</Text>
+          </TouchableOpacity>
         </View>
-
 
         {isCompany ? (
           <>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Управлять заведениями"
+              style={styles.managePlaces}
+              onPress={() => router.push('/manage-places')}
+            >
+              <Ionicons name="business-outline" size={20} color="#2563eb" />
+              <Text style={styles.friendsLinkLabel}>Управлять заведениями</Text>
+              <Ionicons name="chevron-forward" size={18} color="#2563eb" />
+            </TouchableOpacity>
             <View style={styles.companyActions}>
               <TouchableOpacity style={styles.companyActionPrimary} onPress={handleUploadPost} activeOpacity={0.85}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#f8fafc" />
                 <Text style={styles.companyActionPrimaryText}>Выложить пост</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.companyActionSecondary} onPress={handlePublishHighlight} activeOpacity={0.85}>
-                <Ionicons name="sparkles-outline" size={18} color="#606C38" />
+                <Ionicons name="sparkles-outline" size={18} color="#2563eb" />
                 <Text style={styles.companyActionSecondaryText}>Выложить новинку</Text>
               </TouchableOpacity>
             </View>
 
             <ProfileSection
-              title="Мои публикации"
-              subtitle={`${companyPosts.length} постов`}
-              emptyText="Создайте первый пост, чтобы рассказать о своих новостях."
+              title="Мои заведения"
+              subtitle={`Всего ${companyPosts.length}`}
+              emptyText="Добавьте карточку в кабинете компании."
               isEmpty={companyPosts.length === 0}
             >
               {companyPosts.length > 0 ? (
@@ -288,7 +322,7 @@ export default function ProfileScreen() {
                   items={companyPosts.map(item => ({
                     id: item.id,
                     title: item.place,
-                    subtitle: item.tags?.join(' • ') || 'Без тегов',
+                    subtitle: item.address || 'Адрес не указан',
                     image: item.image,
                   }))}
                   onPress={handleOpenCompany}
@@ -311,7 +345,7 @@ export default function ProfileScreen() {
                     onPress={() => handleOpenCompany(review.postId)}
                   >
                     <View style={styles.companyReviewHeader}>
-                      <Ionicons name="person-circle-outline" size={20} color="#606C38" />
+                      <Ionicons name="person-circle-outline" size={20} color="#2563eb" />
                       <View style={styles.companyReviewMeta}>
                         <Text style={styles.companyReviewAuthor}>{review.author}</Text>
                         <Text style={styles.companyReviewPlace}>{review.place}</Text>
@@ -330,25 +364,76 @@ export default function ProfileScreen() {
           </>
         ) : (
           <>
-            <View style={styles.segment}>
-              {([['places', 'Мои места'], ['posts', 'Посты'], ['stories', 'Истории']] as const).map(([key, label]) => (
-                <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: profileTab === key }} onPress={() => setProfileTab(key)} style={[styles.segmentItem, profileTab === key && styles.segmentSelected]}>
-                  <Text numberOfLines={1} style={[styles.segmentText, profileTab === key && styles.segmentTextSelected]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {profileTab === 'places' ? <View style={styles.placeSection}>
-              <View style={styles.placeHeading}><Ionicons name="location-outline" size={21} color="#283618" /><Text style={styles.placeHeadingText}>{isDemoProfile ? 'Посещённые места' : 'Сохранённые места'}</Text><Ionicons name="chevron-forward" size={19} color="#283618" /></View>
-              {isDemoProfile ? demoProfile.places.map(item => <View key={item.name} style={styles.placeRow}>
-                <Image source={{ uri: item.image }} style={styles.placeImage} />
-                <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.name}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{item.rating}</Text></Text><Text style={styles.placeTag}>{item.tag}</Text></View>
-                <Ionicons name={item.saved ? 'bookmark' : 'bookmark-outline'} size={22} color="#BC6C25" />
-              </View>) : favorites.length ? favorites.map(item => <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityLabel={`Открыть ${item.place}`} style={styles.placeRow} onPress={() => handleOpenCompany(item.id)}>
-                <Image source={{ uri: item.image }} style={styles.placeImage} />
-                <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.place}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text>{!!item.tags[0] && <Text style={styles.placeTag}>{item.tags[0]}</Text>}</View>
-                <Ionicons name="bookmark" size={22} color="#BC6C25" />
-              </TouchableOpacity>) : <Text style={styles.emptyStateText}>Сохраняйте интересные места, чтобы быстро к ним вернуться.</Text>}
-            </View> : <Text style={styles.emptyStateText}>{profileTab === 'posts' ? 'Публикации пока недоступны.' : 'Истории пока недоступны.'}</Text>}
+            <ProfileSection
+              title="Избранное"
+              subtitle={`${favorites.length} мест`}
+              emptyText="Сохраняйте интересные места, чтобы быстро возвращаться к ним."
+              isEmpty={favorites.length === 0}
+            >
+              {favorites.length > 0 ? (
+                <HorizontalCollection
+                  items={favorites.map(item => ({
+                    id: item.id,
+                    title: item.place,
+                    subtitle: item.user,
+                    image: item.image,
+                  }))}
+                  onPress={handleOpenCompany}
+                />
+              ) : null}
+            </ProfileSection>
+
+            <ProfileSection
+              title="Понравилось"
+              subtitle={`${liked.length} мест`}
+              emptyText="Отмечайте понравившиеся локации, чтобы они не потерялись."
+              isEmpty={liked.length === 0}
+            >
+              {liked.length > 0 ? (
+                <HorizontalCollection
+                  items={liked.map(item => ({
+                    id: item.id,
+                    title: item.place,
+                    subtitle: item.user,
+                    image: item.gallery?.[0] ?? item.image,
+                  }))}
+                  onPress={handleOpenCompany}
+                />
+              ) : null}
+            </ProfileSection>
+
+            {session.role === 'user' && (
+              <ProfileSection
+                title="Подписки на заведения"
+                subtitle={connections ? `Всего ${subscriptions.length}` : ''}
+                emptyText={connectionsError || 'Подписывайтесь на заведения из их карточек.'}
+                isEmpty={subscriptions.length === 0}
+              >
+                {subscriptions.length > 0 && (
+                  <View style={styles.followingList}>
+                    {subscriptions.map(place => (
+                      <TouchableOpacity
+                        key={place.placeId}
+                        accessibilityRole="button"
+                        style={styles.followingCard}
+                        activeOpacity={0.85}
+                        onPress={() => handleOpenCompany(place.placeId)}
+                      >
+                        <Image source={{ uri: place.avatar }} style={styles.followingAvatar} />
+                        <View style={styles.followingInfo}>
+                          <Text style={styles.followingName}>{place.name}</Text>
+                          <Text style={styles.followingHandle}>@{place.handle}</Text>
+                          {place.description ? (
+                            <Text style={styles.followingDescription} numberOfLines={2}>{place.description}</Text>
+                          ) : null}
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </ProfileSection>
+            )}
           </>
         )}
       </ScrollView>
@@ -370,7 +455,6 @@ function HorizontalCollection({
   items: HorizontalItem[];
   onPress: (id: string) => void;
 }) {
-  const styles = useAppStyles(baseStyles);
   return (
     <ScrollView
       horizontal
@@ -413,7 +497,6 @@ function ProfileSection({
   emptyText: string;
   isEmpty: boolean;
 }) {
-  const styles = useAppStyles(baseStyles);
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -427,35 +510,7 @@ function ProfileSection({
   );
 }
 
-const baseStyles = StyleSheet.create({
-  profileHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  segment: { flexDirection: 'row', backgroundColor: '#F1EBD1', borderRadius: 22, padding: 3 },
-  segmentItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 36, borderRadius: 19, paddingHorizontal: 3 },
-  segmentSelected: { backgroundColor: '#606C38' },
-  segmentText: { color: '#283618', fontSize: 12, fontWeight: '600' },
-  segmentTextSelected: { color: '#FEFAE0' },
-  placeSection: { gap: 0 },
-  placeHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
-  placeHeadingText: { flex: 1, color: '#283618', fontSize: 15, fontWeight: '600' },
-  placeRow: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
-  placeImage: { width: 104, height: 76, borderRadius: 13 },
-  placeInfo: { flex: 1, alignItems: 'flex-start', gap: 3 },
-  placeName: { color: '#283618', fontSize: 14, fontWeight: '700' },
-  placeRating: { color: '#BC6C25', fontSize: 13 },
-  placeRatingNumber: { color: '#283618', fontWeight: '600' },
-  placeTag: { overflow: 'hidden', color: '#283618', backgroundColor: '#F0ECCD', borderRadius: 12, paddingHorizontal: 9, paddingVertical: 4, fontSize: 11 },
-  profileTitle: { color: '#283618', fontSize: 30, lineHeight: 38, fontWeight: '800' },
-  settingsButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  profileIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 16, width: '100%' },
-  profileIdentity: { flex: 1, alignItems: 'flex-start', gap: 5 },
-  avatarPlaceholder: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#F0ECCD', alignItems: 'center', justifyContent: 'center' },
-  profileSubtitle: { fontSize: 14, color: '#6F7457' },
-  menuCard: { borderRadius: 20, backgroundColor: '#FFFCED', borderWidth: 1, borderColor: '#D9D6B5', paddingHorizontal: 14 },
-  menuRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },
-  menuIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#F0ECCD' },
-  menuLabel: { flex: 1, color: '#283618', fontWeight: '600', fontSize: 15 },
-  menuDetail: { color: '#BC6C25', fontWeight: '700' },
+const styles = StyleSheet.create({
   friendsLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -463,19 +518,27 @@ const baseStyles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#F0ECCD',
+    backgroundColor: '#dbeafe',
     marginBottom: 16,
   },
-  friendsLinkLabel: { color: '#283618', fontWeight: '700' },
+  friendsLinkLabel: { color: '#1d4ed8', fontWeight: '700' },
+  managePlaces: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#dbeafe',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#FEFAE0',
+    backgroundColor: '#f1f5f9',
   },
   scroll: {
     padding: 20,
-    gap: 14,
-    paddingTop: 38,
-    paddingBottom: 130,
+    gap: 24,
+    paddingBottom: 40,
   },
   errorBanner: {
     flexDirection: 'row',
@@ -493,34 +556,40 @@ const baseStyles = StyleSheet.create({
   },
   headerCard: {
     alignItems: 'center',
-    backgroundColor: '#FEFAE0',
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    padding: 24,
     gap: 12,
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 12,
   },
   avatar: {
-    width: 108,
-    height: 108,
-    borderRadius: 54,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
   },
   displayName: {
-    color: '#283618',
-    fontSize: 19,
-    lineHeight: 25,
+    color: '#0f172a',
+    fontSize: 24,
     fontWeight: '700',
-    textAlign: 'left',
+    textAlign: 'center',
   },
   surname: {
     fontSize: 16,
-    color: '#6F7457',
+    color: '#64748b',
     fontWeight: '500',
   },
   handle: {
     fontSize: 14,
-    color: '#6F7457',
+    color: '#64748b',
     fontWeight: '500',
   },
   email: {
     fontSize: 14,
-    color: '#6F7457',
+    color: '#94a3b8',
     fontStyle: 'italic',
   },
   accountTag: {
@@ -530,13 +599,13 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 14,
-    backgroundColor: '#F3EBD1',
+    backgroundColor: 'rgba(37, 99, 235, 0.12)',
     marginTop: 4,
   },
   accountTagText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#283618',
+    color: '#1d4ed8',
   },
   statsRow: {
     flexDirection: 'row',
@@ -554,16 +623,18 @@ const baseStyles = StyleSheet.create({
   statValue: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#283618',
+    color: '#0f172a',
   },
   statLabel: {
     fontSize: 12,
-    color: '#6F7457',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
     textAlign: 'center',
   },
   subStatNote: {
     fontSize: 12,
-    color: '#6F7457',
+    color: '#94a3b8',
     fontStyle: 'italic',
     textAlign: 'center',
   },
@@ -587,7 +658,7 @@ const baseStyles = StyleSheet.create({
     borderRadius: 24,
     padding: 20,
     gap: 16,
-    shadowColor: '#283618',
+    shadowColor: '#0f172a',
     shadowOpacity: 0.08,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 14 },
@@ -600,13 +671,13 @@ const baseStyles = StyleSheet.create({
     marginBottom: 4,
   },
   sectionTitle: {
-    color: '#283618',
+    color: '#0f172a',
     fontSize: 18,
     fontWeight: '700',
   },
   sectionSubtitle: {
     fontSize: 13,
-    color: '#6F7457',
+    color: '#64748b',
     fontWeight: '500',
   },
   horizontalList: {
@@ -617,7 +688,7 @@ const baseStyles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#f8fafc',
     overflow: 'hidden',
-    shadowColor: '#283618',
+    shadowColor: '#0f172a',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
@@ -630,20 +701,20 @@ const baseStyles = StyleSheet.create({
   collectionTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#283618',
+    color: '#0f172a',
     paddingHorizontal: 12,
     paddingTop: 10,
     lineHeight: 18,
   },
   collectionSubtitle: {
     fontSize: 13,
-    color: '#6F7457',
+    color: '#64748b',
     paddingHorizontal: 12,
     paddingBottom: 12,
   },
   emptyStateText: {
     fontSize: 14,
-    color: '#6F7457',
+    color: '#94a3b8',
     lineHeight: 20,
     textAlign: 'center',
     fontStyle: 'italic',
@@ -659,7 +730,7 @@ const baseStyles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#f8fafc',
     padding: 14,
-    shadowColor: '#283618',
+    shadowColor: '#0f172a',
     shadowOpacity: 0.08,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -677,11 +748,11 @@ const baseStyles = StyleSheet.create({
   followingName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#283618',
+    color: '#0f172a',
   },
   followingHandle: {
     fontSize: 13,
-    color: '#6F7457',
+    color: '#64748b',
     textTransform: 'lowercase',
   },
   followingDescription: {
@@ -703,8 +774,8 @@ const baseStyles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 20,
-    backgroundColor: '#606C38',
-    shadowColor: '#606C38',
+    backgroundColor: '#2563eb',
+    shadowColor: '#2563eb',
     shadowOpacity: 0.25,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
@@ -728,7 +799,7 @@ const baseStyles = StyleSheet.create({
   companyActionSecondaryText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#606C38',
+    color: '#2563eb',
   },
   companyReviewsList: {
     gap: 12,
@@ -738,7 +809,7 @@ const baseStyles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     padding: 16,
     gap: 10,
-    shadowColor: '#283618',
+    shadowColor: '#0f172a',
     shadowOpacity: 0.05,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -755,12 +826,12 @@ const baseStyles = StyleSheet.create({
   companyReviewAuthor: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#283618',
+    color: '#0f172a',
   },
   companyReviewPlace: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#606C38',
+    color: '#2563eb',
   },
   companyReviewRating: {
     flexDirection: 'row',
@@ -770,7 +841,7 @@ const baseStyles = StyleSheet.create({
   companyReviewRatingText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#BC6C25',
+    color: '#b45309',
   },
   companyReviewComment: {
     fontSize: 14,
@@ -779,7 +850,7 @@ const baseStyles = StyleSheet.create({
   },
   companyReviewDate: {
     fontSize: 12,
-    color: '#6F7457',
+    color: '#94a3b8',
   },
   loadingContainer: {
     flex: 1,
@@ -790,7 +861,7 @@ const baseStyles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#6F7457',
+    color: '#64748b',
     fontWeight: '500',
   },
 });

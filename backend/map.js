@@ -2,16 +2,17 @@
 
 const express = require('express');
 const crypto = require('node:crypto');
+const { createMapNavigationRouter, validCoordinates } = require('./map-navigation');
 
 // Позиции людей живут только в памяти процесса и автоматически устаревают.
 module.exports = function createMapRouter(db, auth, optionalAuth) {
   const router = express.Router();
+  router.use(createMapNavigationRouter());
   const locations = new Map();
   const ttl = 5 * 60 * 1000;
   const all = (sql, args = []) => new Promise((resolve, reject) => db.all(sql, args, (e, rows) => e ? reject(e) : resolve(rows)));
   const get = (sql, args = []) => new Promise((resolve, reject) => db.get(sql, args, (e, row) => e ? reject(e) : resolve(row)));
   const run = (sql, args = []) => new Promise((resolve, reject) => db.run(sql, args, function (e) { e ? reject(e) : resolve(this); }));
-  const validCoordinates = (latitude, longitude) => typeof latitude === 'number' && Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && typeof longitude === 'number' && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
   const prune = () => { for (const [id, location] of locations) if (Date.now() - location.updatedAt > ttl) locations.delete(id); };
   const initialize = async () => {
     await run(`CREATE TABLE IF NOT EXISTS map_places (

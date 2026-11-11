@@ -186,13 +186,13 @@ export default function FeedScreen() {
 
   const handleOpenMap = (post: Post) => {
     router.push('/map');
-    triggerMapSearch(post.address);
+    triggerMapSearch(post.address || post.place, post.id);
   };
 
   const handleBuildRoute = (post: Post) => {
     track('route_requested', post.id);
     router.push('/map');
-    triggerMapRoute(post.address);
+    triggerMapRoute(post.address || post.place, post.id);
   };
 
   const handleDownload = (id: string) => {

@@ -11,6 +11,8 @@
     #status{position:absolute;top:12px;left:12px;right:12px;background:white;color:#334155;padding:10px;border-radius:10px;z-index:2;display:none}
     .pin{border:3px solid white;box-shadow:0 2px 8px #33415566;width:26px;height:26px;border-radius:50%;background:#2563eb;cursor:pointer}
     .person{background:#ff2d55}.chosen{background:#ffb800;width:20px;height:20px}
+    .navigation-pin{pointer-events:none;display:grid;place-items:center;color:white;font-size:13px;font-weight:700}
+    .route-start{background:#0f766e}.route-destination{background:#1d4ed8}
     .maplibregl-ctrl-bottom-right{bottom:6px}.maplibregl-ctrl-attrib{font-size:11px}
   </style>
 </head>
@@ -24,6 +26,19 @@
   };
   function error(message) { status.textContent = message; status.style.display = 'block'; notify({type:'error', message}); }
   let map, ready = false, state = {}, markers = [];
+  let lastCenterSequence, lastRouteSequence;
+  const emptyRoute = {type:'FeatureCollection', features:[]};
+
+  function navigationPin(point, className, letter, label) {
+    if (!point) return;
+    const element = document.createElement('div');
+    element.className = 'pin navigation-pin ' + className;
+    element.setAttribute('role', 'img');
+    element.setAttribute('aria-label', label);
+    element.textContent = letter;
+    markers.push(new maplibregl.Marker({element}).setLngLat([point.longitude, point.latitude]).addTo(map));
+  }
+
   function render() {
     if (!ready) return;
     markers.forEach(marker => marker.remove()); markers = [];
@@ -57,12 +72,42 @@
       const element = document.createElement('div'); element.className = 'pin chosen';
       markers.push(new maplibregl.Marker({element}).setLngLat([state.selected.longitude, state.selected.latitude]).addTo(map));
     }
+    navigationPin(state.routeStart, 'route-start', 'А', 'Начало маршрута');
+    navigationPin(state.destination, 'route-destination', 'Б', state.destination?.title);
   }
+
+  function renderRoute() {
+    const route = state.route;
+    if (route?.sequence === lastRouteSequence) return false;
+    lastRouteSequence = route?.sequence;
+    const source = map.getSource('navigation-route');
+    if (!route) {
+      source.setData(emptyRoute);
+      return false;
+    }
+
+    source.setData({type:'Feature', properties:{}, geometry:{type:'LineString', coordinates:route.coordinates}});
+    const bounds = new maplibregl.LngLatBounds();
+    for (const point of route.coordinates) bounds.extend(point);
+    for (const point of [state.routeStart, state.destination]) {
+      if (point) bounds.extend([point.longitude, point.latitude]);
+    }
+    const height = map.getContainer().clientHeight;
+    map.fitBounds(bounds, {
+      padding: {top:Math.min(145, height * 0.23), bottom:Math.min(315, height * 0.4), left:40, right:40},
+      maxZoom: 17,
+    });
+    return true;
+  }
+
   window.applyMapState = function(next) {
-    state = next || {}; render();
-    if (ready && state.center && state.center.sequence !== window.lastCenterSequence) {
-      window.lastCenterSequence = state.center.sequence;
-      map.flyTo({center:[state.center.longitude,state.center.latitude],zoom:15});
+    state = next || {};
+    if (!ready) return;
+    render();
+    const framedRoute = renderRoute();
+    if (state.center && state.center.sequence !== lastCenterSequence) {
+      lastCenterSequence = state.center.sequence;
+      if (!framedRoute) map.flyTo({center:[state.center.longitude,state.center.latitude],zoom:15});
     }
   };
   window.addEventListener('message', event => {
@@ -152,7 +197,14 @@
   }
   try {
     if (!window.maplibregl) throw new Error('Не удалось загрузить библиотеку карты');
-    map = new maplibregl.Map({container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[37.8026,48.0158], zoom:12});
+    map = new maplibregl.Map({
+      container:'map', style:'https://tiles.openfreemap.org/styles/liberty', center:[37.8026,48.0158], zoom:12,
+      attributionControl:{customAttribution:[
+        '<a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>',
+        '<a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">Маршруты OSRM · FOSSGIS</a>',
+        '<a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Исправить карту</a>',
+      ]},
+    });
     map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
     map.on('load', async () => {
       // Сохраняем структуру и подписи поставщика, меняя цвета основных слоёв.
@@ -167,8 +219,15 @@
       }
       try { await applyRussianRegionalView(); status.style.display = 'none'; }
       catch (_) { error('Не удалось применить настройки границ. Проверьте соединение и обновите карту.'); }
+      map.addSource('navigation-route', {type:'geojson', data:emptyRoute});
+      const routeLayout = {'line-join':'round', 'line-cap':'round'};
+      map.addLayer({id:'navigation-route-outline', type:'line', source:'navigation-route', layout:routeLayout,
+        paint:{'line-color':'#fff','line-width':9}});
+      map.addLayer({id:'navigation-route-line', type:'line', source:'navigation-route', layout:routeLayout,
+        paint:{'line-color':'#2563eb','line-width':6}});
       ready = true;
-      render(); window.applyMapState(state); notify({type:'ready'});
+      window.applyMapState(state);
+      notify({type:'ready'});
     });
     map.on('click', event => {
       if (event.originalEvent.target instanceof Element && event.originalEvent.target.closest('.pin')) return;

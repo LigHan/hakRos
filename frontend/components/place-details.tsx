@@ -171,14 +171,14 @@ function PlaceDetails({ id }: { id?: string }) {
   const openInMap = () => {
     if (!post) return;
     router.push('/map');
-    triggerMapSearch(post.address);
+    triggerMapSearch(post.address || post.place, post.id);
   };
 
   const buildRoute = () => {
     if (post) track('route_requested', post.id);
     if (!post) return;
     router.push('/map');
-    triggerMapRoute(post.address);
+    triggerMapRoute(post.address || post.place, post.id);
   };
 
   const sharePlace = async () => {
@@ -352,7 +352,7 @@ function PlaceDetails({ id }: { id?: string }) {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionButton} onPress={buildRoute}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Маршрут" style={styles.actionButton} onPress={buildRoute}>
               <Ionicons name="navigate-outline" size={24} color="#1C1C1E" />
               <Text style={styles.actionText}>Маршрут</Text>
             </TouchableOpacity>

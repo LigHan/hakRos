@@ -2,15 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import MapCanvas from '@/components/MapCanvas';
-import type { MapPoint, MapState } from '@/components/MapCanvas.types';
+import type { MapCoordinates, MapPoint, MapState } from '@/components/MapCanvas.types';
+import { MapRoutePanel, MapSearchResults, type MapSearchState } from '@/components/map-navigation-controls';
+import { currentMapCoordinates, findAddresses, findRoute, placeSearchResult, type MapRoute, type MapSearchResult, type RoutePlan, type TravelMode } from '@/lib/map-navigation';
 import { registerMapSearchHandler } from '@/lib/map-search';
-import { api, authorized } from '@/lib/statistics';
+import { api, ApiError, authorized } from '@/lib/statistics';
 import { getUserSession, type UserSession } from '@/lib/user-session';
 
-type Coordinates = { latitude: number; longitude: number };
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Не удалось выполнить действие';
 
 export default function MapScreen() {
@@ -20,10 +21,16 @@ export default function MapScreen() {
   const [focused, setFocused] = useState(false);
   const [places, setPlaces] = useState<MapPoint[]>([]);
   const [people, setPeople] = useState<MapPoint[]>([]);
-  const [selected, setSelected] = useState<Coordinates | null>(null);
+  const [selected, setSelected] = useState<MapCoordinates | null>(null);
   const [center, setCenter] = useState<MapState['center']>(null);
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
+  const [searchState, setSearchState] = useState<MapSearchState | null>(null);
+  const [destination, setDestination] = useState<MapSearchResult | null>(null);
+  const [plan, setPlan] = useState<RoutePlan | null>(null);
+  const [route, setRoute] = useState<(MapRoute & { sequence: number }) | null>(null);
+  const [routeStatus, setRouteStatus] = useState<'idle' | 'locating' | 'routing'>('idle');
+  const [routeError, setRouteError] = useState('');
   const [adding, setAdding] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState('');
@@ -31,13 +38,48 @@ export default function MapScreen() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [myPlacesOpen, setMyPlacesOpen] = useState(false);
-  const lastPosition = useRef<Coordinates | null>(null);
+  const searchRequest = useRef<AbortController | null>(null);
+  const routeRequest = useRef<AbortController | null>(null);
+  const lastPosition = useRef<MapCoordinates | null>(null);
   const handledFocus = useRef('');
   const loadVersion = useRef(0);
   const mapFocused = useRef(false);
 
-  const move = useCallback((point: Coordinates) => setCenter({ ...point, sequence: Date.now() + Math.random() }), []);
-  const select = useCallback((latitude: number, longitude: number) => { setSelected({ latitude, longitude }); }, []);
+  const move = useCallback(({ latitude, longitude }: MapCoordinates) => {
+    setCenter({ latitude, longitude, sequence: Date.now() + Math.random() });
+  }, []);
+  const cancelSearch = useCallback(() => {
+    searchRequest.current?.abort();
+    setSearchState(null);
+  }, []);
+  const resetRoute = useCallback(() => {
+    routeRequest.current?.abort();
+    setRoute(null);
+    setRouteStatus('idle');
+    setRouteError('');
+  }, []);
+  const closeDestination = useCallback(() => {
+    resetRoute();
+    setDestination(null);
+    setPlan(null);
+  }, [resetRoute]);
+  const showDestination = useCallback((result: MapSearchResult, planOnSelect: boolean) => {
+    cancelSearch();
+    resetRoute();
+    setDestination(result);
+    setPlan(planOnSelect ? { mode: 'walk', origin: null, pickingOrigin: false } : null);
+    move(result);
+  }, [cancelSearch, resetRoute, move]);
+
+  const chooseOrigin = useCallback((point: MapCoordinates, title: string) => {
+    resetRoute();
+    setPlan(current => current && { ...current, origin: { ...point, title }, pickingOrigin: false });
+  }, [resetRoute]);
+  const select = useCallback((latitude: number, longitude: number) => {
+    const point = { latitude, longitude };
+    if (plan?.pickingOrigin) chooseOrigin(point, 'точка на карте');
+    else if (adding || !destination) setSelected(point);
+  }, [adding, destination, plan?.pickingOrigin, chooseOrigin]);
   const canvasError = useCallback((message: string) => setError(message), []);
   const load = useCallback(async (activeSession: UserSession | null) => {
     if (!mapFocused.current) return;
@@ -59,8 +101,19 @@ export default function MapScreen() {
     setLoaded(false);
     setFocused(true);
     void getUserSession().then(value => { if (active) { setSession(value); void load(value); } });
-    return () => { active = false; mapFocused.current = false; loadVersion.current++; setPlaces([]); setPeople([]); setFocused(false); setSharing(false); handledFocus.current = ''; };
-  }, [load]));
+    return () => {
+      active = false;
+      mapFocused.current = false;
+      loadVersion.current++;
+      setPlaces([]);
+      setPeople([]);
+      setFocused(false);
+      setSharing(false);
+      handledFocus.current = '';
+      cancelSearch();
+      closeDestination();
+    };
+  }, [load, cancelSearch, closeDestination]));
   useEffect(() => {
     if (!focused) return;
     const timer = setInterval(() => void load(session), 20000);
@@ -73,7 +126,7 @@ export default function MapScreen() {
     let subscription: Location.LocationSubscription | undefined;
     let timer: ReturnType<typeof setInterval> | undefined;
     let pending = Promise.resolve();
-    const send = (position: Coordinates) => {
+    const send = (position: MapCoordinates) => {
       pending = pending.then(async () => {
         if (active) await authorized('/api/map/location', { method: 'PUT', body: JSON.stringify(position) });
       }).catch(e => { if (active) { setError(messageOf(e)); setSharing(false); } });
@@ -131,26 +184,107 @@ export default function MapScreen() {
     }, 0);
     return () => clearTimeout(timer);
   }, [focused, loaded, params.focusType, params.focusId, people, places, session, move]);
-  useEffect(() => {
-    if (!focused) return;
-    return registerMapSearchHandler(action => {
-      if (action.type === 'route') {
-        void Linking.openURL(`https://yandex.ru/maps/?rtext=${encodeURIComponent(`~${action.query}`)}&rtt=auto`).catch(e => setError(messageOf(e)));
-      } else if (action.query) {
-        setQuery(action.query);
-        const point = places.find(item => action.query && item.name.toLowerCase().includes(action.query.toLowerCase()));
-        if (point) move(point); else setNotice('Адрес не найден среди точек карты. Можно открыть поиск в Яндекс Картах.');
+  const search = useCallback(async (input: string, fromCard = false, planOnSelect = false, postId?: string) => {
+    if (!mapFocused.current) return;
+    Keyboard.dismiss();
+    cancelSearch();
+    const pinned = postId && places.find(point => point.postId === postId);
+    if (pinned) {
+      showDestination(placeSearchResult(pinned), planOnSelect);
+      return;
+    }
+
+    const text = input.trim();
+    if (!text && !fromCard) return;
+    if (text.length < 2) {
+      setSearchState({ results: [], pending: false, planOnSelect,
+        message: fromCard ? 'У этого места нет адреса.' : 'Введите хотя бы два символа.' });
+      return;
+    }
+
+    const request = new AbortController();
+    searchRequest.current = request;
+    const normalize = (value: string) => value.toLowerCase().replace(/ё/g, 'е');
+    const needle = normalize(text);
+    const local = places.filter(point => normalize(point.name).includes(needle)).slice(0, 5).map(placeSearchResult);
+    setSearchState({ results: local, pending: true, planOnSelect });
+
+    try {
+      const addresses = await findAddresses(text, request.signal);
+      if (request.signal.aborted) return;
+      const results = [...local, ...addresses];
+      if (fromCard && results.length === 1) showDestination(results[0], planOnSelect);
+      else setSearchState({ results, pending: false, planOnSelect,
+        message: results.length ? undefined : 'Адрес или место не найдено. Уточните запрос.' });
+    } catch (cause) {
+      if (!request.signal.aborted) {
+        const message = cause instanceof ApiError ? cause.message : 'Не удалось найти адрес. Проверьте соединение и повторите поиск.';
+        setSearchState({ results: local, pending: false, planOnSelect, message });
       }
+    }
+  }, [places, cancelSearch, showDestination]);
+
+  useEffect(() => {
+    if (!focused || !loaded) return;
+    return registerMapSearchHandler(action => {
+      if (!mapFocused.current) return false;
+      if (!action.query && !action.postId) return true;
+      setQuery(action.query ?? '');
+      setAdding(false);
+      setNotice('');
+      closeDestination();
+      void search(action.query ?? '', true, action.type === 'route', action.postId);
+      return true;
     });
-  }, [focused, places, move]);
+  }, [focused, loaded, search, closeDestination]);
 
   const locate = async () => {
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') throw new Error('Нет разрешения на геолокацию');
-      const result = await Location.getCurrentPositionAsync({});
-      move({ latitude: result.coords.latitude, longitude: result.coords.longitude });
-    } catch (e) { setError(messageOf(e)); }
+      setError('');
+      move(await currentMapCoordinates());
+    } catch (cause) {
+      if (mapFocused.current) setError(messageOf(cause));
+    }
+  };
+
+  const locateOrigin = async () => {
+    if (!plan || routeStatus !== 'idle') return;
+    resetRoute();
+    const request = new AbortController();
+    routeRequest.current = request;
+    setRouteStatus('locating');
+    try {
+      const point = await currentMapCoordinates();
+      if (!request.signal.aborted) chooseOrigin(point, 'моё местоположение');
+    } catch {
+      if (!request.signal.aborted) setRouteError('Не удалось определить местоположение. Выберите старт на карте.');
+    } finally {
+      if (!request.signal.aborted) setRouteStatus('idle');
+    }
+  };
+
+  const changeMode = (mode: TravelMode) => {
+    if (!plan || plan.mode === mode) return;
+    resetRoute();
+    setPlan({ ...plan, mode });
+  };
+
+  const buildRoute = async () => {
+    if (!plan?.origin || !destination || plan.pickingOrigin || routeStatus !== 'idle') return;
+    resetRoute();
+    const request = new AbortController();
+    routeRequest.current = request;
+    setRouteStatus('routing');
+    try {
+      const result = await findRoute(plan.origin, destination, plan.mode, request.signal);
+      if (!request.signal.aborted) setRoute({ ...result, sequence: Date.now() + Math.random() });
+    } catch (cause) {
+      if (!request.signal.aborted) {
+        setRouteError(cause instanceof ApiError ? cause.message : 'Не удалось построить маршрут. Проверьте соединение.');
+      }
+    } finally {
+      if (!request.signal.aborted) setRouteStatus('idle');
+    }
   };
   const save = async () => {
     if (!session?.token) { setError('Войдите в аккаунт, чтобы добавить место'); return; }
@@ -164,20 +298,37 @@ export default function MapScreen() {
       await load(session);
     } catch (e) { setError(messageOf(e)); } finally { setSaving(false); }
   };
-  const search = () => {
-    const text = query.trim().toLowerCase();
-    const point = places.find(item => item.name.toLowerCase().includes(text));
-    if (text && point) { move(point); setNotice(`Найдено: ${point.name}`); }
-    else if (text) setNotice('Среди точек карты ничего не найдено');
-  };
-
   return <View style={styles.root}>
-    <View style={styles.map}><MapCanvas state={{ places, people, selected, center }} onSelect={select} onError={canvasError} onSubmit={submitPoint} /></View>
+    <View style={styles.map}>
+      <MapCanvas state={{ places, people, selected, center, destination, routeStart: plan?.origin ?? null, route }}
+        onSelect={select} onError={canvasError} onSubmit={submitPoint} />
+    </View>
     <View pointerEvents="box-none" style={styles.overlay}>
       <View style={styles.header}><Ionicons name="map" size={20} color="#2563eb" /><Text style={styles.title}>Карта города</Text><TouchableOpacity accessibilityLabel="Моё местоположение" onPress={() => void locate()}><Ionicons name="locate" size={23} color="#2563eb" /></TouchableOpacity></View>
-      <View style={styles.search}><TextInput accessibilityLabel="Поиск места на карте" placeholder="Поиск среди добавленных мест" value={query} onChangeText={setQuery} onSubmitEditing={search} style={styles.input} /><TouchableOpacity onPress={search}><Ionicons name="search" size={22} color="#2563eb" /></TouchableOpacity></View>
+      <View style={styles.search}>
+        <TextInput accessibilityLabel="Поиск адреса или места" placeholder="Адрес или название места"
+          value={query} onChangeText={text => { setQuery(text); cancelSearch(); }}
+          onSubmitEditing={() => void search(query)} returnKeyType="search" maxLength={160} style={styles.input} />
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Найти на карте"
+          onPress={() => void search(query)} style={styles.searchButton}>
+          <Ionicons name="search" size={22} color="#2563eb" />
+        </TouchableOpacity>
+      </View>
+      {searchState && <MapSearchResults search={searchState}
+        onSelect={result => showDestination(result, searchState.planOnSelect)} onClose={cancelSearch} />}
       {(error || notice) ? <TouchableOpacity onPress={() => { setError(''); setNotice(''); }} style={styles.message}><Text style={error ? styles.error : styles.hint}>{error || notice}  ×</Text></TouchableOpacity> : null}
-      <ScrollView style={styles.panel} keyboardShouldPersistTaps="handled">
+      {destination && !adding ? (
+        <ScrollView style={styles.panel} keyboardShouldPersistTaps="handled">
+          <MapRoutePanel destination={destination} plan={plan} route={route} status={routeStatus} error={routeError}
+            onPlan={() => setPlan({ mode: 'walk', origin: null, pickingOrigin: false })}
+            onClose={closeDestination} onMode={changeMode} onLocate={() => void locateOrigin()}
+            onPickOrigin={() => {
+              setRouteError('');
+              setPlan(current => current && { ...current, pickingOrigin: !current.pickingOrigin });
+            }}
+            onEditOrigin={resetRoute} onBuild={() => void buildRoute()} />
+        </ScrollView>
+      ) : <ScrollView style={styles.panel} keyboardShouldPersistTaps="handled">
         <View style={styles.actions}>
           <TouchableOpacity style={styles.primary} onPress={() => { setAdding(!adding); setError(''); }}><Text style={styles.primaryText}>{adding ? 'Отменить' : '+ Добавить место'}</Text></TouchableOpacity>
           {session?.role === 'user' && <TouchableOpacity style={styles.secondary} onPress={() => { setSharing(!sharing); setError(''); }}><Text style={styles.secondaryText}>{sharing ? 'Скрыть меня' : 'Показывать меня'}</Text></TouchableOpacity>}
@@ -187,8 +338,7 @@ export default function MapScreen() {
         {adding ? <View style={styles.form}><Text style={styles.hint}>Нажмите на карту, чтобы выбрать точку</Text><TextInput accessibilityLabel="Название места" placeholder="Название места" value={name} onChangeText={setName} maxLength={120} style={styles.field} /><Text style={styles.hint}>{selected ? `${selected.latitude.toFixed(5)}, ${selected.longitude.toFixed(5)}` : 'Точка не выбрана'}</Text><TouchableOpacity style={styles.primary} disabled={saving} onPress={() => void save()}><Text style={styles.primaryText}>{saving ? 'Сохранение…' : 'Сохранить место'}</Text></TouchableOpacity></View> : <Text style={styles.hint}>{sharing ? 'Ваше положение видно вошедшим пользователям, пока открыта карта.' : 'Места и люди, которые разрешили показ геопозиции.'}</Text>}
         {!session && <Text style={styles.hint}>Войдите, чтобы добавлять места и видеть людей.</Text>}
         {myPlacesOpen && <View style={styles.form}><Text style={styles.hint}>Мои точки</Text>{places.filter(place => place.isOwn).length === 0 && <Text style={styles.hint}>Вы ещё не добавили точки.</Text>}{places.filter(place => place.isOwn).map(place => <View key={place.id} style={styles.friendRow}><TouchableOpacity onPress={() => move(place)}><Text style={styles.secondaryText}>{place.name}</Text></TouchableOpacity><Text style={styles.hint}>{place.reviewStatus === 'approved' ? 'Опубликовано' : place.reviewStatus === 'pending' ? 'На проверке' : 'Видно друзьям'}</Text>{place.reviewStatus === 'private' && <TouchableOpacity onPress={() => void submitPoint(place.id)}><Text style={styles.link}>Отправить на проверку</Text></TouchableOpacity>}</View>)}</View>}
-        {query.trim() ? <TouchableOpacity onPress={() => void Linking.openURL(`https://yandex.ru/maps/?text=${encodeURIComponent(query.trim())}`).catch(e => setError(messageOf(e)))}><Text style={styles.link}>Найти адрес в Яндекс Картах ↗</Text></TouchableOpacity> : null}
-      </ScrollView>
+      </ScrollView>}
     </View>
   </View>;
 }
@@ -197,7 +347,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#eaf1fa' }, map: { ...StyleSheet.absoluteFill },
   overlay: { ...StyleSheet.absoluteFill, padding: 16, paddingTop: Platform.OS === 'web' ? 16 : 48, paddingBottom: 100, justifyContent: 'flex-start' },
   header: { backgroundColor: '#fff', borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }, title: { color: '#0f172a', fontWeight: '700', fontSize: 18, flex: 1 },
-  search: { marginTop: 8, backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }, input: { flex: 1, paddingVertical: 13, color: '#0f172a' },
+  search: { marginTop: 8, backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' }, input: { flex: 1, paddingVertical: 13, color: '#0f172a' }, searchButton: { minWidth: 42, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   message: { marginTop: 8, backgroundColor: '#fff', padding: 10, borderRadius: 12 }, error: { color: '#b42318', fontSize: 13 },
   panel: { flexGrow: 0, marginTop: 'auto', backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: 18, padding: 14, maxHeight: '45%' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   primary: { backgroundColor: '#2563eb', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 }, primaryText: { color: 'white', fontWeight: '700', textAlign: 'center' },

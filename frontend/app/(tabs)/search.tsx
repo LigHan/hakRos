@@ -215,13 +215,13 @@ export default function SearchScreen() {
 
   const openInMap = (post: SearchPost) => {
     router.push('/map');
-    triggerMapSearch(post.address);
+    triggerMapSearch(post.address || post.place, post.id);
   };
 
   const buildRoute = (post: SearchPost) => {
     track('route_requested', post.id);
     router.push('/map');
-    triggerMapRoute(post.address);
+    triggerMapRoute(post.address || post.place, post.id);
   };
 
   const handleOpenDetail = (post: SearchPost) => {
@@ -520,7 +520,7 @@ export default function SearchScreen() {
                     onPress={() => {
                       if (!activePost) return;
                       handleCloseDetail();
-                      triggerMapSearch(activePost.address);
+                      triggerMapSearch(activePost.address || activePost.place, activePost.id);
                     }}
                   >
                     <Ionicons name="map-outline" size={18} color="#1e293b" />

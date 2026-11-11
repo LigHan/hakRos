@@ -149,13 +149,13 @@ export default function NearbyScreen() {
 
   const openInMap = (post: NearbyPost) => {
     router.push('/map');
-    triggerMapSearch(post.address);
+    triggerMapSearch(post.address || post.place, post.id);
   };
 
   const buildRoute = (post: NearbyPost) => {
     track('route_requested', post.id);
     router.push('/map');
-    triggerMapRoute(post.address);
+    triggerMapRoute(post.address || post.place, post.id);
   };
 
   const handleOpenDetail = (post: NearbyPost) => {

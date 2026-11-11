@@ -25,15 +25,20 @@ module.exports = function createMapRouter(db, auth, optionalAuth, locationOption
 
   router.get('/places', optionalAuth, async (req, res) => {
     const id = req.account ? String(req.account.id) : '';
+    const subscriberId = req.account?.role === 'user' ? id : null;
     const admin = process.env.LOCAL_DEMO === '1' && req.account?.role === 'admin';
     res.set('Cache-Control', 'no-store');
-    res.json(await all(`SELECT id, name, latitude, longitude, post_id AS postId,
-      review_status AS reviewStatus, CASE WHEN creator_id = ? THEN 1 ELSE 0 END AS isOwn
-      FROM map_places p WHERE review_status = 'approved' OR creator_id = ?
-      OR (? = 1 AND review_status = 'pending') OR EXISTS (
+    const places = await all(`SELECT p.id, p.name, p.latitude, p.longitude, p.post_id AS postId,
+      post.category, post.image, post.address,
+      p.review_status AS reviewStatus, CASE WHEN p.creator_id = ? THEN 1 ELSE 0 END AS isOwn,
+      EXISTS (SELECT 1 FROM place_subscriptions s WHERE s.user_id = ? AND s.place_id = p.post_id) AS isSubscribed
+      FROM map_places p LEFT JOIN posts post ON post.id = p.post_id
+      WHERE p.review_status = 'approved' OR p.creator_id = ?
+      OR (? = 1 AND p.review_status = 'pending') OR EXISTS (
         SELECT 1 FROM friendships f WHERE f.accepted = 1 AND
         ((CAST(f.low_id AS TEXT) = ? AND CAST(f.high_id AS TEXT) = p.creator_id) OR (CAST(f.high_id AS TEXT) = ? AND CAST(f.low_id AS TEXT) = p.creator_id))
-      ) ORDER BY created_at DESC`, [id, id, admin ? 1 : 0, id, id]));
+      ) ORDER BY p.created_at DESC`, [id, subscriberId, id, admin ? 1 : 0, id, id]);
+    res.json(places.map(place => ({ ...place, isSubscribed: Boolean(place.isSubscribed) })));
   });
   router.post('/places', auth, async (req, res) => {
     const { name, latitude, longitude, postId } = req.body || {};

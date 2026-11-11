@@ -12,8 +12,12 @@ export type AccountProfile = {
   canView?: boolean;
 };
 
+export function resolveAvatarUrl(avatar: string | null | undefined): string {
+  return avatar?.startsWith('/api/profile-avatars/') ? API_URL + avatar : avatar ?? '';
+}
+
 function normalize(profile: AccountProfile): AccountProfile {
-  return { ...profile, avatar: profile.avatar.startsWith('/') ? API_URL + profile.avatar : profile.avatar };
+  return { ...profile, avatar: resolveAvatarUrl(profile.avatar) };
 }
 
 export async function getAccountProfile(signal?: AbortSignal): Promise<AccountProfile> {

@@ -40,7 +40,7 @@ module.exports = function createSocial(db, auth, media) {
     i.media_id AS mediaId,
     (SELECT m.kind FROM social_media m WHERE m.id=i.media_id) AS mediaKind,
     (SELECT m.mime_type FROM social_media m WHERE m.id=i.media_id) AS mediaMimeType,
-    ${hasProfiles ? "(SELECT '/api/profile-avatars/' || ap.user_id || '/' || ap.avatar_version FROM account_profiles ap WHERE ap.user_id=i.author_id AND ap.avatar_version IS NOT NULL)" : 'NULL'} AS authorAvatar,
+    ${hasProfiles ? "(SELECT '/api/profile-avatars/' || ap.user_id || '/' || ap.avatar_version FROM account_profiles ap WHERE ap.user_id=i.author_id AND ap.avatar_is_public=1 AND ap.avatar_version IS NOT NULL)" : 'NULL'} AS authorAvatar,
     i.created_at AS createdAt, i.expires_at AS expiresAt, i.original_id AS originalId,
     CAST(i.author_id AS TEXT) AS authorId, TRIM(u.name || ' ' || COALESCE(u.surname,'')) AS authorName,
     p.place AS placeName,

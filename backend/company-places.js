@@ -2,6 +2,7 @@
 
 const { createHash, randomUUID } = require('node:crypto');
 const express = require('express');
+const readJpeg = require('./jpeg');
 
 const categories = new Set(['', 'cafe', 'restaurant', 'park', 'museum', 'shop', 'entertainment']);
 const maxCoverBytes = 1024 * 1024;
@@ -67,17 +68,6 @@ function coverPath(id, version) {
   return `/api/place-covers/${encodeURIComponent(id)}/${version}`;
 }
 
-function readCover(base64) {
-  if (typeof base64 !== 'string' || base64.length > Math.ceil(maxCoverBytes / 3) * 4) return null;
-  const data = Buffer.from(base64, 'base64');
-  if (data.length < 5 || data.length > maxCoverBytes || data.toString('base64') !== base64) return null;
-  // Принимаем только JPEG. Ответ с фото всегда отдаётся с типом image/jpeg.
-  if (data.readUInt16BE(0) !== 0xffd8 || data[2] !== 0xff || data.readUInt16BE(data.length - 2) !== 0xffd9) {
-    return null;
-  }
-  return data;
-}
-
 function isImageUrl(value) {
   if (value.length > 2048) return false;
   try {
@@ -104,7 +94,7 @@ function parseFields(body, id, current) {
       (image.trim() && image.trim() !== current?.image && !isImageUrl(image.trim())))) {
     return { error: 'Некорректная ссылка на фото.' };
   }
-  const cover = coverBase64 === undefined ? null : readCover(coverBase64);
+  const cover = coverBase64 === undefined ? null : readJpeg(coverBase64, maxCoverBytes);
   if (coverBase64 !== undefined && !cover) {
     return { error: 'Выберите фото в формате JPEG размером до 1 МБ.' };
   }

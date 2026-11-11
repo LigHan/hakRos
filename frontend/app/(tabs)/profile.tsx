@@ -271,7 +271,15 @@ export default function ProfileScreen() {
         )}
         <View style={styles.headerCard}>
           <View style={styles.profileIdentityRow}>
-            {session.avatar ? <Image source={{ uri: session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
+            <View>
+              {session.avatar ? <Image source={{ uri: session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
+              {session.role === 'user' && (
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Настройки фото профиля"
+                  onPress={() => router.push('/settings')} style={styles.avatarCamera}>
+                  <Ionicons name="camera-outline" size={17} color="#FEFAE0" />
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={styles.profileIdentity}>
               <ThemedText type="title" style={styles.displayName}>{isDemoProfile ? demoProfile.name : `${session.name}${session.surname && !isCompany ? ` ${session.surname}` : ''}`}</ThemedText>
               {isDemoProfile && <Text style={styles.profileSubtitle}>{demoProfile.subtitle}</Text>}
@@ -492,6 +500,7 @@ const baseStyles = StyleSheet.create({
   profileIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 16, width: '100%' },
   profileIdentity: { flex: 1, alignItems: 'flex-start', gap: 5 },
   avatarPlaceholder: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#F0ECCD', alignItems: 'center', justifyContent: 'center' },
+  avatarCamera: { position: 'absolute', right: 0, bottom: 0, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#606C38', borderWidth: 2, borderColor: '#FEFAE0' },
   profileSubtitle: { fontSize: 14, color: '#6F7457' },
   profileBio: { fontSize: 14, lineHeight: 21, color: '#283618', flexShrink: 1 },
   privacyTag: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },

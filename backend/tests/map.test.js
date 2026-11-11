@@ -3,21 +3,33 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const sqlite = require('sqlite3');
+const createAccountProfile = require('../account-profile');
 const createMap = require('../map');
 const createStatistics = require('../statistics');
 
 test('точки и геопозиция друзей: доступ, модерация и отзыв показа', async t => {
   const db = new sqlite.Database(':memory:');
   const exec = sql => new Promise((resolve, reject) => db.exec(sql, e => e ? reject(e) : resolve()));
-  await exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, surname TEXT, role TEXT); INSERT INTO users VALUES (1, 'Аня', 'Иванова', 'user'), (2, 'Борис', NULL, 'user'), (3, 'Вера', NULL, 'user'), (4, 'Глеб', NULL, 'user'), (5, 'Кафе', NULL, 'company'); CREATE TABLE posts (id TEXT PRIMARY KEY); INSERT INTO posts VALUES ('post-1')");
+  const avatarBase64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0xff, 0xd9]).toString('base64');
+  const avatar = 'data:image/jpeg;base64,' + avatarBase64;
+  await exec(`
+    CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, surname TEXT, role TEXT, avatar TEXT);
+    INSERT INTO users VALUES (1, 'Аня', 'Иванова', 'user', '${avatar}'),
+      (2, 'Борис', NULL, 'user', NULL), (3, 'Вера', NULL, 'user', NULL),
+      (4, 'Глеб', NULL, 'user', NULL), (5, 'Кафе', NULL, 'company', NULL);
+    CREATE TABLE posts (id TEXT PRIMARY KEY, category TEXT, image TEXT, address TEXT);
+    INSERT INTO posts VALUES ('post-1', 'park', 'https://example.invalid/park.jpg', 'Центральная, 5');
+  `);
   const oldDemo = process.env.LOCAL_DEMO; process.env.LOCAL_DEMO = '1';
   t.after(() => { if (oldDemo === undefined) delete process.env.LOCAL_DEMO; else process.env.LOCAL_DEMO = oldDemo; });
   let now = 1_000_000;
   const statistics = createStatistics(db);
+  const profiles = createAccountProfile(db, statistics.auth);
   const map = createMap(db, statistics.auth, statistics.optionalAuth, { now: () => now });
   const connections = require('../connections')(db, statistics.auth, { onFriendRemoved: map.revokeFriendship });
-  await connections.initialize(); await map.initialize();
+  await connections.initialize(); await profiles.initialize(); await map.initialize();
   const app = express();
+  app.use('/api', profiles.router);
   app.use(express.json());
   app.use('/api/map', map.router);
   app.use('/api/connections', connections.router);
@@ -46,6 +58,7 @@ test('точки и геопозиция друзей: доступ, модер�
   const created = (await request('/places', 'GET', user)).data[0];
   assert.equal(created.name, 'Парк');
   assert.equal(created.reviewStatus, 'private');
+  assert.deepEqual([created.category, created.image, created.address], [null, null, null]);
   assert.equal((await request('/places')).data.length, 0);
   assert.equal((await request('/places', 'GET', other)).data.length, 0);
   assert.equal((await request('/places', 'GET', admin)).data.length, 0);
@@ -79,7 +92,27 @@ test('точки и геопозиция друзей: доступ, модер�
   assert.equal((await review(admin,'approve')).status,409);
   assert.equal((await request('/places', 'POST', admin, { ...point, postId: 'post-1' })).status, 201);
   assert.equal((await request('/places', 'POST', admin, { ...point, longitude: 38, postId: 'post-1' })).status, 201);
-  assert.equal((await request('/places')).data.find(p => p.postId === 'post-1').longitude, 38);
+  const venue = (await request('/places')).data.find(p => p.postId === 'post-1');
+  assert.equal(venue.longitude, 38);
+  assert.equal(venue.category, 'park');
+  assert.equal(venue.image, 'https://example.invalid/park.jpg');
+  assert.equal(venue.address, 'Центральная, 5');
+  await t.test('карта показывает только подписки текущего личного аккаунта', async () => {
+    const forAccount = token => request('/places', 'GET', token);
+    const subscribed = response => response.data.find(place => place.postId === 'post-1').isSubscribed;
+
+    assert.equal(subscribed(await forAccount(user)), false);
+    assert.equal((await connection('/places/post-1', 'PUT', user)).status, 200);
+    const personalMap = await forAccount(user);
+    assert.equal(personalMap.headers.get('cache-control'), 'no-store');
+    assert.equal(subscribed(personalMap), true);
+    assert.equal(personalMap.data.find(place => place.id === created.id).isSubscribed, false);
+    for (const token of [other, company, admin, undefined]) {
+      assert.equal(subscribed(await forAccount(token)), false);
+    }
+    assert.equal((await connection('/places/post-1', 'DELETE', user)).status, 200);
+    assert.equal(subscribed(await forAccount(user)), false);
+  });
   assert.equal((await request(`/places/${created.id}`, 'DELETE', admin)).status, 200);
 
   assert.equal((await connection('/friends/4/request', 'PUT', user)).status, 200);
@@ -110,9 +143,22 @@ test('точки и геопозиция друзей: доступ, модер�
   const visible = await view(other);
   assert.equal(visible.headers.get('cache-control'), 'no-store');
   assert.deepEqual(visible.data, [{
-    id: '1', name: 'Аня Иванова', latitude: 48.016, longitude: 37.803, updatedAt: now, expiresInMs: 300_000,
+    id: '1', name: 'Аня Иванова', avatar, latitude: 48.016, longitude: 37.803, updatedAt: now, expiresInMs: 300_000,
   }]);
   for (const token of [user, unselected, stranger]) assert.deepEqual((await view(token)).data, []);
+
+  const updateAvatar = body => fetch(`http://127.0.0.1:${server.address().port}/api/account/profile`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + user },
+    body: JSON.stringify(body),
+  });
+  const savedAvatar = await updateAvatar({ avatarBase64 });
+  assert.equal(savedAvatar.status, 200);
+  const { avatar: profileAvatar } = await savedAvatar.json();
+  assert.match(profileAvatar, /^\/api\/profile-avatars\/1\/[a-f0-9]{64}$/);
+  assert.equal((await view(other)).data[0].avatar, profileAvatar);
+  assert.deepEqual((await view(unselected)).data, []);
+  assert.equal((await updateAvatar({ removeAvatar: true })).status, 200);
+  assert.equal((await view(other)).data[0].avatar, null);
 
   now += 299_999;
   assert.equal((await view(other)).data[0].expiresInMs, 1);

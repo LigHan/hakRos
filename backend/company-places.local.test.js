@@ -2,11 +2,14 @@
 
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { once } = require('node:events');
 const { mkdtemp, unlink, rmdir } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { test } = require('node:test');
+const bcrypt = require('bcrypt');
+const sqlite = require('sqlite3');
 
 const path = '/api/company/places';
 const password = 'test-password';
@@ -209,4 +212,72 @@ test('Компания управляет только своими карточ
   await api.request(path, 409, { token: freshToken, method: 'POST', body: draft });
   await api.request(publicPath, 404);
   await api.requestCover(keptCover.image, 404);
+});
+
+test('Объединение аватаров сохраняет существующий профиль и видимость старого фото', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'hakros-avatar-'));
+  const database = join(directory, 'test.db');
+  let api;
+  t.after(async () => {
+    await api?.stop();
+    await unlink(database).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    await rmdir(directory);
+  });
+  const oldAvatar = 'data:image/jpeg;base64,' + coverBase64;
+  const image = Buffer.from(coverBase64, 'base64');
+  const version = createHash('sha256').update(image).digest('hex');
+  const hash = await bcrypt.hash(password, 4);
+  const oldEmail = 'old@profile.invalid';
+  const currentEmail = 'current@profile.invalid';
+  const legacy = new sqlite.Database(database);
+  const run = (sql, params) => new Promise((resolve, reject) => {
+    legacy.run(sql, params, error => error ? reject(error) : resolve());
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      legacy.exec(`CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL, surname TEXT, password TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('user', 'company')),
+        avatar TEXT
+      );
+      CREATE TABLE account_profiles (
+        user_id INTEGER PRIMARY KEY, bio TEXT NOT NULL DEFAULT '',
+        is_private INTEGER NOT NULL DEFAULT 1, avatar_data BLOB, avatar_version TEXT
+      )`, error => error ? reject(error) : resolve());
+    });
+    await run("INSERT INTO users VALUES (1, ?, 'Анна', NULL, ?, 'user', ?), (2, ?, 'Борис', NULL, ?, 'user', ?)",
+      [oldEmail, hash, oldAvatar, currentEmail, hash, 'data:image/jpeg;base64,/9j/4P/Z']);
+    await run("INSERT INTO account_profiles VALUES (1, 'Старое био', 0, NULL, NULL), (2, 'Био из main', 1, ?, ?)", [image, version]);
+  } finally {
+    await new Promise((resolve, reject) => legacy.close(error => error ? reject(error) : resolve()));
+  }
+
+  api = await startApi(database);
+  const login = email => api.request('/login', 200, {
+    method: 'POST', body: { email, password },
+  });
+  const profilePath = '/api/account/profile';
+  const old = await login(oldEmail);
+  const current = await login(currentEmail);
+  const canonicalPath = '/api/profile-avatars/2/' + version;
+  assert.equal(old.user.avatar, oldAvatar);
+  assert.equal(current.user.avatar, canonicalPath);
+  const migrated = await api.request(profilePath, 200, { token: old.token });
+  assert.deepEqual([migrated.bio, migrated.isPrivate, migrated.avatar], ['Старое био', false, oldAvatar]);
+  const visibleOld = await api.request('/api/profiles/1', 200, { token: current.token });
+  assert.deepEqual([visibleOld.canView, visibleOld.bio, visibleOld.avatar], [true, 'Старое био', '']);
+  const visibleCurrent = await api.request('/api/profiles/2', 200, { token: old.token });
+  assert.deepEqual([visibleCurrent.canView, visibleCurrent.bio, visibleCurrent.avatar], [false, '', canonicalPath]);
+  await api.requestCover('/api/profile-avatars/1/' + version, 404);
+  await api.requestCover(canonicalPath, 200);
+  const updated = await api.request(profilePath, 200, { token: old.token, method: 'PATCH', body: { bio: 'Обновлённое био' } });
+  assert.equal(updated.avatar, oldAvatar);
+  const removed = await api.request(profilePath, 200, { token: old.token, method: 'PATCH', body: { removeAvatar: true } });
+  assert.equal(removed.avatar, '');
+
+  await api.stop();
+  api = await startApi(database);
+  assert.equal((await login(oldEmail)).user.avatar, '');
+  assert.equal((await login(currentEmail)).user.avatar, canonicalPath);
 });

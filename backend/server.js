@@ -93,7 +93,7 @@ function insertUser(fields) {
 
 function findUser(email) {
   return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM users WHERE email = ?', [email], (error, user) => {
+    db.get('SELECT id, email, name, surname, password, role FROM users WHERE email = ?', [email], (error, user) => {
       if (error) reject(error);
       else resolve(user);
     });
@@ -132,8 +132,9 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Email и пароль обязательны' });
   }
 
+  res.set('Cache-Control', 'no-store');
   if (process.env.LOCAL_DEMO === '1' && email === 'admin@local.test' && password === 'demo1234') {
-    const user = { id: 'local-admin', name: 'Администратор', email, role: 'admin', handle: 'admin', surname: null };
+    const user = { id: 'local-admin', name: 'Администратор', email, role: 'admin', handle: 'admin', surname: null, avatar: '' };
     return res.json({ user, token: statistics.issue(user) });
   }
   const user = await findUser(email);
@@ -142,9 +143,10 @@ app.post('/login', async (req, res) => {
   }
 
   const { password: _password, ...safeUser } = user;
+  const profile = await accountProfiles.getProfile(user.id, { includePrivateAvatar: true });
   res.json({
     message: 'Логин успешен',
-    user: { ...safeUser, handle: email.split('@')[0].toLowerCase() },
+    user: { ...safeUser, handle: email.split('@')[0].toLowerCase(), avatar: profile?.avatar ?? '' },
     token: statistics.issue({ id: String(user.id), role: user.role }),
   });
 });

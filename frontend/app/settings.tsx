@@ -118,7 +118,7 @@ export default function SettingsScreen() {
           <TextInput accessibilityLabel="Био" placeholder="Расскажите о себе" placeholderTextColor={palette.muted} multiline maxLength={500} value={bio} onChangeText={value => { setBio(value); setNotice(''); }} editable={!profileSaving} style={styles.bioInput} />
           <Text style={styles.counter}>{bio.length}/500</Text>
           {session.role === 'user' && <View style={styles.privacyRow}>
-            <View style={styles.privacyCopy}><Text style={styles.fieldLabel}>Приватный профиль</Text><Text style={styles.optionDescription}>Публикации, истории и био видны только вам и подтверждённым друзьям. Имя и аватарка остаются видимыми.</Text></View>
+            <View style={styles.privacyCopy}><Text style={styles.fieldLabel}>Приватный профиль</Text><Text style={styles.optionDescription}>Публикации, истории и био видны только вам и подтверждённым друзьям. Имя и фото, сохранённое в настройках, видны и в приватном профиле.</Text></View>
             <Switch accessibilityLabel="Приватный профиль" value={isPrivate} disabled={profileSaving} onValueChange={value => { setIsPrivate(value); setNotice(''); }} trackColor={{ true: palette.olive, false: palette.border }} />
           </View>}
           <Pressable accessibilityRole="button" disabled={profileSaving} onPress={() => void saveProfile()} style={[styles.saveButton, profileSaving && styles.disabled]}>{profileSaving ? <ActivityIndicator color={palette.cream} /> : <Text style={styles.saveButtonText}>Сохранить профиль</Text>}</Pressable>

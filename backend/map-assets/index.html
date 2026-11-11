@@ -4,16 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <link rel="stylesheet" href="/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="/map-assets/map-markers.css">
   <script src="/maplibre/maplibre-gl.js"></script>
   <script src="/map-assets/boundary-clip.js"></script>
   <script src="/map-assets/russian-labels.js"></script>
+  <script src="/map-assets/map-markers.js"></script>
   <style>
     html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#fefae0}
     #status{position:absolute;top:12px;left:12px;right:12px;background:#fffced;color:#283618;padding:10px;border-radius:10px;z-index:2;display:none}
-    .pin{border:3px solid #fffced;box-shadow:0 2px 8px #28361866;width:26px;height:26px;border-radius:50%;background:#606c38;cursor:pointer}
-    .person{background:#bc6c25}.chosen{background:#dda15e;width:20px;height:20px}
-    .navigation-pin{pointer-events:none;display:grid;place-items:center;color:white;font-size:13px;font-weight:700}
-    .route-start{background:#283618}.route-destination{background:#606c38}
     .maplibregl-ctrl-bottom-right{bottom:6px}.maplibregl-ctrl-attrib{font-size:11px}
   </style>
 </head>
@@ -26,57 +24,9 @@
     else if (window.parent !== window) window.parent.postMessage(value, '*');
   };
   function error(message) { status.textContent = message; status.style.display = 'block'; notify({type:'error', message}); }
-  let map, ready = false, state = {}, markers = [];
+  let map, renderMarkers, ready = false, state = {};
   let lastCenterSequence, lastRouteSequence;
   const emptyRoute = {type:'FeatureCollection', features:[]};
-
-  function navigationPin(point, className, letter, label) {
-    if (!point) return;
-    const element = document.createElement('div');
-    element.className = 'pin navigation-pin ' + className;
-    element.setAttribute('role', 'img');
-    element.setAttribute('aria-label', label);
-    element.textContent = letter;
-    markers.push(new maplibregl.Marker({element}).setLngLat([point.longitude, point.latitude]).addTo(map));
-  }
-
-  function render() {
-    if (!ready) return;
-    markers.forEach(marker => marker.remove()); markers = [];
-    for (const point of [...(state.places || []), ...(state.people || [])]) {
-      if (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) continue;
-      const element = document.createElement('div');
-      element.className = 'pin' + (point.kind === 'person' ? ' person' : '');
-      element.setAttribute('role', 'button');
-      element.setAttribute('aria-label', point.name);
-      const content = document.createElement('div');
-      const title = document.createElement('strong'); title.textContent = point.name;
-      const details = document.createElement('div');
-      details.textContent = point.kind === 'person'
-        ? 'Примерная геопозиция друга'
-        : `Место · ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
-      content.append(title, details);
-      if (point.isOwn && point.reviewStatus) {
-        const review = document.createElement('div');
-        review.textContent = {private:'Видно вам и друзьям',pending:'На проверке',approved:'Опубликовано'}[point.reviewStatus] || '';
-        content.append(review);
-        if (point.reviewStatus === 'private') {
-          const submit = document.createElement('button'); submit.textContent = 'Отправить на проверку';
-          submit.addEventListener('click', event => { event.stopPropagation(); notify({type:'submit',id:point.id}); });
-          content.append(submit);
-        }
-      }
-      const marker = new maplibregl.Marker({element}).setLngLat([point.longitude, point.latitude])
-        .setPopup(new maplibregl.Popup({offset: 20}).setDOMContent(content)).addTo(map);
-      markers.push(marker);
-    }
-    if (state.selected) {
-      const element = document.createElement('div'); element.className = 'pin chosen';
-      markers.push(new maplibregl.Marker({element}).setLngLat([state.selected.longitude, state.selected.latitude]).addTo(map));
-    }
-    navigationPin(state.routeStart, 'route-start', 'А', 'Начало маршрута');
-    navigationPin(state.destination, 'route-destination', 'Б', state.destination?.title);
-  }
 
   function renderRoute() {
     const route = state.route;
@@ -105,7 +55,7 @@
   window.applyMapState = function(next) {
     state = next || {};
     if (!ready) return;
-    render();
+    renderMarkers(state);
     const framedRoute = renderRoute();
     if (state.center && state.center.sequence !== lastCenterSequence) {
       lastCenterSequence = state.center.sequence;
@@ -224,6 +174,7 @@
         paint:{'line-color':'#fffced','line-width':9}});
       map.addLayer({id:'navigation-route-line', type:'line', source:'navigation-route', layout:routeLayout,
         paint:{'line-color':'#606c38','line-width':6}});
+      renderMarkers = window.createMapMarkers(map, notify);
       ready = true;
       window.applyMapState(state);
       notify({type:'ready'});

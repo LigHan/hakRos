@@ -2,6 +2,7 @@
 
 const { randomUUID } = require('node:crypto');
 const express = require('express');
+const { avatarUrl } = require('./account-profile');
 const { validCoordinates } = require('./map-navigation');
 
 const lifetime = 5 * 60_000;
@@ -34,11 +35,13 @@ module.exports = function createFriendLocations(db, auth, { now = Date.now } = {
   function confirmedFriends(userId) {
     return new Promise((resolve, reject) => {
       db.all(
-        `SELECT friend.id, friend.name, friend.surname
+        `SELECT friend.id, friend.name, friend.surname, profile.avatar_version, profile.avatar_is_public,
+           CASE WHEN profile.avatar_is_public = 0 THEN profile.avatar_data END AS avatar_data
          FROM friendships AS f
          JOIN users AS account ON account.id = ? AND account.role = 'user'
          JOIN users AS friend ON friend.id = CASE WHEN f.low_id = account.id THEN f.high_id ELSE f.low_id END
            AND friend.role = 'user'
+         LEFT JOIN account_profiles AS profile ON profile.user_id = friend.id
          WHERE f.accepted = 1 AND (f.low_id = account.id OR f.high_id = account.id)`,
         [userId],
         (error, rows) => error ? reject(error) : resolve(rows)
@@ -66,6 +69,7 @@ module.exports = function createFriendLocations(db, auth, { now = Date.now } = {
       visible.push({
         id: String(friend.id),
         name: [friend.name, friend.surname].filter(Boolean).join(' '),
+        avatar: avatarUrl(friend) || null,
         ...share.position,
         expiresInMs: share.expiresAt - now(),
       });

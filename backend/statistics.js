@@ -56,7 +56,7 @@ module.exports = function createStatistics(db) {
         if(!existing) await run('INSERT INTO users(email,name,surname,password,role) VALUES(?,?,NULL,?,?)',[item.email,item.name,await bcrypt.hash('demo1234',10),item.role]);
       }
       const owner=await get('SELECT id FROM users WHERE email=?',['company@local.test']);
-      const post=await get('SELECT id FROM posts ORDER BY id LIMIT 1');
+      const post=await get('SELECT id FROM posts WHERE id = ?', ['1']);
       if(owner&&post) await run('INSERT OR IGNORE INTO local_place_owners(place_id,owner_id) VALUES(?,?)',[post.id,String(owner.id)]);
     }
   }

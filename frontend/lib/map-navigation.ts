@@ -3,7 +3,7 @@ import * as Location from 'expo-location';
 import type { MapCoordinates, MapPoint } from '@/components/MapCanvas.types';
 import { api } from '@/lib/statistics';
 
-export type MapSearchResult = MapCoordinates & { id: string; title: string; subtitle: string };
+export type MapSearchResult = MapCoordinates & { id: string; title: string; subtitle: string; pointId?: string };
 export type TravelMode = 'walk' | 'drive';
 export type MapRoute = { coordinates: [number, number][]; distance: number; duration: number };
 export type RoutePlan = {
@@ -13,7 +13,7 @@ export type RoutePlan = {
 };
 
 export function placeSearchResult(point: MapPoint): MapSearchResult {
-  return { id: 'place-' + point.id, title: point.name, subtitle: 'Сохранённая точка', latitude: point.latitude, longitude: point.longitude };
+  return { id: 'place-' + point.id, pointId: point.id, title: point.name, subtitle: point.address || 'Сохранённая точка', latitude: point.latitude, longitude: point.longitude };
 }
 
 export function findAddresses(query: string, signal?: AbortSignal): Promise<MapSearchResult[]> {

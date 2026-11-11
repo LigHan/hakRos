@@ -1,0 +1,78 @@
+.pin { cursor: pointer; }
+.pin-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border: 2px solid #fffced;
+  border-radius: 50%;
+  background: #606c38;
+  color: #fffced;
+  box-shadow: 0 2px 7px #28361855;
+}
+.pin-face svg { width: 18px; height: 18px; }
+.pin-cafe .pin-face { background: #f2dfbe; color: #734719; }
+.pin-restaurant .pin-face { background: #f4dfcb; color: #813f22; }
+.pin-park .pin-face { background: #e1e8c9; color: #3f5b24; }
+.pin-museum .pin-face { background: #eae0ef; color: #624576; }
+.pin-shop .pin-face { background: #dfe8ee; color: #35556c; }
+.pin-entertainment .pin-face { background: #f4dee4; color: #793c59; }
+.pin-person .pin-face { width: 38px; height: 38px; background: #f2dfbe; color: #734719; }
+.pin-route-start, .pin-route-destination, .pin-chosen { pointer-events: none; }
+.pin-route-start .pin-face { background: #283618; }
+.pin-chosen .pin-face { background: #dda15e; color: #283618; }
+.pin-route-start, .pin-route-destination, .pin-chosen, .pin-current-destination { z-index: 2; }
+.pin-current-destination .pin-face { outline: 2px solid #606c38; }
+.nearby-subscription { z-index: 3; }
+.nearby-subscription .pin-face {
+  width: 42px;
+  height: 42px;
+  outline: 2px solid #bc6c25;
+  animation: nearby-arrival 400ms ease-out;
+}
+.nearby-subscription .pin-face svg { width: 22px; height: 22px; }
+.pin-open { z-index: 4; }
+.pin-open.nearby-subscription .photo-ready { width: 52px; height: 52px; border-radius: 14px; }
+.pin-avatar, .pin-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pin-avatar, .pin-photo { visibility: hidden; }
+.photo-ready .pin-avatar, .pin-open .photo-ready .pin-photo { visibility: visible; }
+.maplibregl-popup { z-index: 5; }
+.maplibregl-popup-content {
+  padding: 12px 24px 12px 12px;
+  border-radius: 14px;
+  background: #fffced;
+  color: #283618;
+  box-shadow: 0 4px 15px #28361833;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #fffced; }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #fffced; }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #fffced; }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #fffced; }
+.maplibregl-popup-close-button { padding: 2px 7px; color: #606c38; font-size: 17px; }
+.map-pin-card { display: flex; align-items: flex-start; gap: 9px; font: 13px/1.35 system-ui, sans-serif; }
+.map-pin-card-body { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.map-pin-caption { color: #626548; font-size: 12px; }
+.map-pin-thumbnail { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; }
+.map-pin-action {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: #ede9cc;
+  color: #283618;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+@keyframes nearby-arrival {
+  0% { transform: translateY(0) scale(.84); }
+  60% { transform: translateY(-4px) scale(1.05); }
+  100% { transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nearby-subscription .pin-face { animation: none; }
+}

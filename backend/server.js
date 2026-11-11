@@ -11,6 +11,7 @@ const connections = require('./connections')(db, statistics.auth, { onFriendRemo
 const social = require('./social')(db, statistics.auth);
 const path = require('node:path');
 const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
+const readJpeg = require('./jpeg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,6 +26,7 @@ const endpoints = [
   'GET /api/posts/:id',
   'POST /register',
   'POST /login',
+  'PUT /api/profile/avatar',
   'GET /api/connections',
   'GET /api/company/places',
 ];
@@ -120,8 +122,9 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Email и пароль обязательны' });
   }
 
+  res.set('Cache-Control', 'no-store');
   if (process.env.LOCAL_DEMO === '1' && email === 'admin@local.test' && password === 'demo1234') {
-    const user = { id: 'local-admin', name: 'Администратор', email, role: 'admin', handle: 'admin', surname: null };
+    const user = { id: 'local-admin', name: 'Администратор', email, role: 'admin', handle: 'admin', surname: null, avatar: null };
     return res.json({ user, token: statistics.issue(user) });
   }
   const user = await findUser(email);
@@ -135,6 +138,25 @@ app.post('/login', async (req, res) => {
     user: { ...safeUser, handle: email.split('@')[0].toLowerCase() },
     token: statistics.issue({ id: String(user.id), role: user.role }),
   });
+});
+
+app.put('/api/profile/avatar', statistics.auth, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (req.account.role !== 'user') return res.status(403).json({ error: 'Аватар можно изменить в личном аккаунте.' });
+
+  const avatar = req.body?.avatar;
+  const prefix = 'data:image/jpeg;base64,';
+  if (avatar !== null && (typeof avatar !== 'string' || !avatar.startsWith(prefix) ||
+      !readJpeg(avatar.slice(prefix.length), 32 * 1024))) {
+    return res.status(400).json({ error: 'Выберите фото JPEG размером до 32 КБ.' });
+  }
+
+  const updated = await new Promise((resolve, reject) => {
+    db.get("UPDATE users SET avatar = ? WHERE id = ? AND role = 'user' RETURNING avatar",
+      [avatar, req.account.id], (error, row) => error ? reject(error) : resolve(row));
+  });
+  if (!updated) return res.status(404).json({ error: 'Пользователь не найден.' });
+  res.json(updated);
 });
 
 app.post('/api/logout', statistics.auth, (req, _res, next) => { map.hide(req.account.id); next(); });

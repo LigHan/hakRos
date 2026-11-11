@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import MapCanvas from '@/components/MapCanvas';
 import type { MapCoordinates, MapPlace, MapPoint, MapState } from '@/components/MapCanvas.types';
+import { MapBottomSheet } from '@/components/map-bottom-sheet';
 import { MapLocationSharing } from '@/components/map-location-sharing';
 import { MapRoutePanel, MapSearchResults, type MapSearchState } from '@/components/map-navigation-controls';
 import { palette, useAppStyles } from '@/lib/app-appearance';
@@ -15,7 +16,7 @@ import { api, ApiError, authorized } from '@/lib/statistics';
 import { useNearbyMapPosition } from '@/lib/use-nearby-map-position';
 import { getUserSession, type UserSession } from '@/lib/user-session';
 
-type FriendLocation = MapCoordinates & { id: string; name: string; updatedAt: number; expiresInMs: number };
+type FriendLocation = MapCoordinates & { id: string; name: string; avatar?: string | null; updatedAt: number; expiresInMs: number };
 type FriendPin = MapPoint & { expiresAt: number };
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Не удалось выполнить действие';
@@ -54,6 +55,10 @@ export default function MapScreen() {
     focused && session?.role === 'user' && Boolean(session.token) && places.some(place => place.isSubscribed),
     permissionCheck,
   );
+  const routeStart = plan?.origin ?? null;
+  const mapState = useMemo<MapState>(() => ({
+    places: highlightNearbySubscriptions(places, position), people, selected, center, destination, routeStart, route,
+  }), [places, position, people, selected, center, destination, routeStart, route]);
   const recheckLocation = () => setPermissionCheck(check => check + 1);
 
   const move = useCallback(({ latitude, longitude }: MapCoordinates) => {
@@ -92,6 +97,10 @@ export default function MapScreen() {
     else if (adding || !destination) setSelected(point);
   }, [adding, destination, plan?.pickingOrigin, chooseOrigin]);
   const canvasError = useCallback((message: string) => setError(message), []);
+  const openPlace = useCallback((id: string) => {
+    const postId = places.find(point => point.id === id)?.postId;
+    if (mapFocused.current && postId) router.push({ pathname: '/company/[id]', params: { id: postId } });
+  }, [places, router]);
   const load = useCallback(async (activeSession: UserSession | null) => {
     if (!mapFocused.current) return;
     const version = ++loadVersion.current;
@@ -302,8 +311,8 @@ export default function MapScreen() {
   };
   return <View style={styles.root}>
     <View style={styles.map}>
-      <MapCanvas state={{ places: highlightNearbySubscriptions(places, position), people, selected, center, destination, routeStart: plan?.origin ?? null, route }}
-        onSelect={select} onError={canvasError} onSubmit={submitPoint} />
+      <MapCanvas state={mapState}
+        onSelect={select} onError={canvasError} onSubmit={submitPoint} onOpenPlace={openPlace} />
     </View>
     <View pointerEvents="box-none" style={styles.overlay}>
       <View style={styles.headerCard}>
@@ -329,8 +338,11 @@ export default function MapScreen() {
       {searchState && <MapSearchResults search={searchState}
         onSelect={result => showDestination(result, searchState.planOnSelect)} onClose={cancelSearch} />}
       {(error || notice) ? <TouchableOpacity onPress={() => { setError(''); setNotice(''); }} style={styles.message}><Text style={error ? styles.error : styles.hint}>{error || notice}  ×</Text></TouchableOpacity> : null}
-      {destination && !adding ? (
-        <ScrollView style={styles.panel} keyboardShouldPersistTaps="handled">
+      <MapBottomSheet
+        key={adding ? 'add-place' : destination?.id ?? 'map-actions'}
+        title={adding ? 'Добавить место' : destination?.title ?? 'Действия на карте'}
+      >
+        {destination && !adding ? (
           <MapRoutePanel destination={destination} plan={plan} route={route} status={routeStatus} error={routeError}
             onPlan={() => setPlan({ mode: 'walk', origin: null, pickingOrigin: false })}
             onClose={closeDestination} onMode={changeMode} onLocate={() => void locateOrigin()}
@@ -339,17 +351,19 @@ export default function MapScreen() {
               setPlan(current => current && { ...current, pickingOrigin: !current.pickingOrigin });
             }}
             onEditOrigin={resetRoute} onBuild={() => void buildRoute()} />
-        </ScrollView>
-      ) : <ScrollView style={styles.panel} keyboardShouldPersistTaps="handled">
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.primary} onPress={() => { setAdding(!adding); setError(''); }}><Text style={styles.primaryText}>{adding ? 'Отменить' : '+ Добавить место'}</Text></TouchableOpacity>
-          {session?.role === 'user' && session?.token && <TouchableOpacity style={styles.secondary} onPress={() => router.push('/connections')}><Text style={styles.secondaryText}>Друзья</Text></TouchableOpacity>}
-          {session?.token && <TouchableOpacity style={styles.secondary} onPress={() => setMyPlacesOpen(!myPlacesOpen)}><Text style={styles.secondaryText}>Мои точки</Text></TouchableOpacity>}
-        </View>
-        {adding ? <View style={styles.form}><Text style={styles.hint}>Нажмите на карту, чтобы выбрать точку</Text><TextInput accessibilityLabel="Название места" placeholder="Название места" value={name} onChangeText={setName} maxLength={120} style={styles.field} /><Text style={styles.hint}>{selected ? `${selected.latitude.toFixed(5)}, ${selected.longitude.toFixed(5)}` : 'Точка не выбрана'}</Text><TouchableOpacity style={styles.primary} disabled={saving} onPress={() => void save()}><Text style={styles.primaryText}>{saving ? 'Сохранение…' : 'Сохранить место'}</Text></TouchableOpacity></View> : <Text style={styles.hint}>Доступные вам места и друзья, которые поделились геопозицией.</Text>}
-        {!session && <Text style={styles.hint}>Войдите, чтобы добавлять места и видеть людей.</Text>}
-        {myPlacesOpen && <View style={styles.form}><Text style={styles.hint}>Мои точки</Text>{places.filter(place => place.isOwn).length === 0 && <Text style={styles.hint}>Вы ещё не добавили точки.</Text>}{places.filter(place => place.isOwn).map(place => <View key={place.id} style={styles.friendRow}><TouchableOpacity onPress={() => move(place)}><Text style={styles.secondaryText}>{place.name}</Text></TouchableOpacity><Text style={styles.hint}>{place.reviewStatus === 'approved' ? 'Опубликовано' : place.reviewStatus === 'pending' ? 'На проверке' : 'Видно друзьям'}</Text>{place.reviewStatus === 'private' && <TouchableOpacity onPress={() => void submitPoint(place.id)}><Text style={styles.link}>Отправить на проверку</Text></TouchableOpacity>}</View>)}</View>}
-      </ScrollView>}
+        ) : (
+          <>
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.primary} onPress={() => { setAdding(!adding); setError(''); }}><Text style={styles.primaryText}>{adding ? 'Отменить' : '+ Добавить место'}</Text></TouchableOpacity>
+              {session?.role === 'user' && session?.token && <TouchableOpacity style={styles.secondary} onPress={() => router.push('/connections')}><Text style={styles.secondaryText}>Друзья</Text></TouchableOpacity>}
+              {session?.token && <TouchableOpacity style={styles.secondary} onPress={() => setMyPlacesOpen(!myPlacesOpen)}><Text style={styles.secondaryText}>Мои точки</Text></TouchableOpacity>}
+            </View>
+            {adding ? <View style={styles.form}><Text style={styles.hint}>Нажмите на карту, чтобы выбрать точку</Text><TextInput accessibilityLabel="Название места" placeholder="Название места" value={name} onChangeText={setName} maxLength={120} style={styles.field} /><Text style={styles.hint}>{selected ? `${selected.latitude.toFixed(5)}, ${selected.longitude.toFixed(5)}` : 'Точка не выбрана'}</Text><TouchableOpacity style={styles.primary} disabled={saving} onPress={() => void save()}><Text style={styles.primaryText}>{saving ? 'Сохранение…' : 'Сохранить место'}</Text></TouchableOpacity></View> : <Text style={styles.hint}>Доступные вам места и друзья, которые поделились геопозицией.</Text>}
+            {!session && <Text style={styles.hint}>Войдите, чтобы добавлять места и видеть людей.</Text>}
+            {myPlacesOpen && <View style={styles.form}><Text style={styles.hint}>Мои точки</Text>{places.filter(place => place.isOwn).length === 0 && <Text style={styles.hint}>Вы ещё не добавили точки.</Text>}{places.filter(place => place.isOwn).map(place => <View key={place.id} style={styles.friendRow}><TouchableOpacity onPress={() => move(place)}><Text style={styles.secondaryText}>{place.name}</Text></TouchableOpacity><Text style={styles.hint}>{place.reviewStatus === 'approved' ? 'Опубликовано' : place.reviewStatus === 'pending' ? 'На проверке' : 'Видно друзьям'}</Text>{place.reviewStatus === 'private' && <TouchableOpacity onPress={() => void submitPoint(place.id)}><Text style={styles.link}>Отправить на проверку</Text></TouchableOpacity>}</View>)}</View>}
+          </>
+        )}
+      </MapBottomSheet>
     </View>
   </View>;
 }
@@ -364,7 +378,6 @@ const baseStyles = StyleSheet.create({
   searchButton: { minWidth: 42, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   message: { marginTop: 8, backgroundColor: palette.surface, padding: 10, borderRadius: 12 },
   error: { color: '#b42318', fontSize: 13 },
-  panel: { flexGrow: 0, marginTop: 'auto', backgroundColor: 'rgba(254,250,224,0.96)', borderRadius: 18, padding: 14, maxHeight: '45%' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   primary: { backgroundColor: palette.olive, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11 },
   primaryText: { color: palette.cream, fontWeight: '700', textAlign: 'center' },

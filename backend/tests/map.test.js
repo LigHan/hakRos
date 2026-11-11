@@ -9,7 +9,15 @@ const createStatistics = require('../statistics');
 test('точки и геопозиция друзей: доступ, модерация и отзыв показа', async t => {
   const db = new sqlite.Database(':memory:');
   const exec = sql => new Promise((resolve, reject) => db.exec(sql, e => e ? reject(e) : resolve()));
-  await exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, surname TEXT, role TEXT); INSERT INTO users VALUES (1, 'Аня', 'Иванова', 'user'), (2, 'Борис', NULL, 'user'), (3, 'Вера', NULL, 'user'), (4, 'Глеб', NULL, 'user'), (5, 'Кафе', NULL, 'company'); CREATE TABLE posts (id TEXT PRIMARY KEY); INSERT INTO posts VALUES ('post-1')");
+  const avatar = 'data:image/jpeg;base64,/9j//9k=';
+  await exec(`
+    CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, surname TEXT, role TEXT, avatar TEXT);
+    INSERT INTO users VALUES (1, 'Аня', 'Иванова', 'user', '${avatar}'),
+      (2, 'Борис', NULL, 'user', NULL), (3, 'Вера', NULL, 'user', NULL),
+      (4, 'Глеб', NULL, 'user', NULL), (5, 'Кафе', NULL, 'company', NULL);
+    CREATE TABLE posts (id TEXT PRIMARY KEY, category TEXT, image TEXT, address TEXT);
+    INSERT INTO posts VALUES ('post-1', 'park', 'https://example.invalid/park.jpg', 'Центральная, 5');
+  `);
   const oldDemo = process.env.LOCAL_DEMO; process.env.LOCAL_DEMO = '1';
   t.after(() => { if (oldDemo === undefined) delete process.env.LOCAL_DEMO; else process.env.LOCAL_DEMO = oldDemo; });
   let now = 1_000_000;
@@ -46,6 +54,7 @@ test('точки и геопозиция друзей: доступ, модер�
   const created = (await request('/places', 'GET', user)).data[0];
   assert.equal(created.name, 'Парк');
   assert.equal(created.reviewStatus, 'private');
+  assert.deepEqual([created.category, created.image, created.address], [null, null, null]);
   assert.equal((await request('/places')).data.length, 0);
   assert.equal((await request('/places', 'GET', other)).data.length, 0);
   assert.equal((await request('/places', 'GET', admin)).data.length, 0);
@@ -79,7 +88,11 @@ test('точки и геопозиция друзей: доступ, модер�
   assert.equal((await review(admin,'approve')).status,409);
   assert.equal((await request('/places', 'POST', admin, { ...point, postId: 'post-1' })).status, 201);
   assert.equal((await request('/places', 'POST', admin, { ...point, longitude: 38, postId: 'post-1' })).status, 201);
-  assert.equal((await request('/places')).data.find(p => p.postId === 'post-1').longitude, 38);
+  const venue = (await request('/places')).data.find(p => p.postId === 'post-1');
+  assert.equal(venue.longitude, 38);
+  assert.equal(venue.category, 'park');
+  assert.equal(venue.image, 'https://example.invalid/park.jpg');
+  assert.equal(venue.address, 'Центральная, 5');
   await t.test('карта показывает только подписки текущего личного аккаунта', async () => {
     const forAccount = token => request('/places', 'GET', token);
     const subscribed = response => response.data.find(place => place.postId === 'post-1').isSubscribed;
@@ -126,7 +139,7 @@ test('точки и геопозиция друзей: доступ, модер�
   const visible = await view(other);
   assert.equal(visible.headers.get('cache-control'), 'no-store');
   assert.deepEqual(visible.data, [{
-    id: '1', name: 'Аня Иванова', latitude: 48.016, longitude: 37.803, updatedAt: now, expiresInMs: 300_000,
+    id: '1', name: 'Аня Иванова', avatar, latitude: 48.016, longitude: 37.803, updatedAt: now, expiresInMs: 300_000,
   }]);
   for (const token of [user, unselected, stranger]) assert.deepEqual((await view(token)).data, []);
 

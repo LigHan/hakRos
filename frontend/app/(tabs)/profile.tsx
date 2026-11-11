@@ -1,9 +1,12 @@
 import { useAppStyles } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
+import { ImageManipulator, SaveFormat, type ImageManipulatorContext, type ImageRef } from 'expo-image-manipulator';
+import { launchImageLibraryAsync } from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Platform,
@@ -18,7 +21,7 @@ import {
 import { getConnections, type Connections } from '@/lib/connections';
 import { getCompanyPlaces } from '@/lib/company-places';
 import { getSocialFeed, type SocialItem } from '@/lib/social';
-import { ApiError } from '@/lib/statistics';
+import { api, ApiError } from '@/lib/statistics';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
@@ -28,6 +31,7 @@ import {
 } from '@/lib/likes-favorites';
 import {
   getUserSession,
+  setUserSession,
   type UserSession,
 } from '@/lib/user-session';
 
@@ -44,6 +48,30 @@ const demoProfile = {
   ],
 };
 
+async function pickAvatar(): Promise<string | null> {
+  const result = await launchImageLibraryAsync({ mediaTypes: ['images'] });
+  if (result.canceled) return null;
+
+  const { uri } = result.assets[0];
+  let context: ImageManipulatorContext | undefined;
+  let rendered: ImageRef | undefined;
+  try {
+    context = ImageManipulator.manipulate(uri, { maxWidth: 160, maxHeight: 160 });
+    rendered = await context.renderAsync();
+    const photo = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.8, base64: true });
+    if (Platform.OS === 'web') URL.revokeObjectURL(photo.uri);
+    const { base64 } = photo;
+    if (!base64 || Math.floor(base64.replace(/=+$/, '').length * 3 / 4) > 32 * 1024) {
+      throw new Error('Не удалось уменьшить фото.');
+    }
+    return 'data:image/jpeg;base64,' + base64;
+  } finally {
+    rendered?.release();
+    context?.release();
+    if (Platform.OS === 'web') URL.revokeObjectURL(uri);
+  }
+}
+
 export default function ProfileScreen() {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
@@ -58,6 +86,9 @@ export default function ProfileScreen() {
   const [error, setError] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);
   const [connections, setConnections] = useState<Connections | null>(null);
+  const [avatarError, setAvatarError] = useState('');
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const avatarUpdateInFlight = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -228,6 +259,40 @@ export default function ProfileScreen() {
     } catch (cause) { console.warn('Не удалось поделиться', cause); }
   };
 
+  const changeAvatar = async (remove: boolean) => {
+    if (avatarUpdateInFlight.current || session?.role !== 'user' || !session.token) return;
+    const { token } = session;
+    avatarUpdateInFlight.current = true;
+    setSavingAvatar(true);
+    setAvatarError('');
+    try {
+      const avatar = remove ? null : await pickAvatar();
+      if (!remove && !avatar) return;
+      if ((await getUserSession())?.token !== token) return;
+
+      const saved: { avatar: string | null } = await api('/api/profile/avatar', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ avatar }),
+      });
+      const current = await getUserSession();
+      if (current?.token !== token) return;
+      const updatedAvatar = saved.avatar ?? '';
+      await setUserSession({ ...current, avatar: updatedAvatar });
+      setSession(active => active?.token === token ? { ...active, avatar: updatedAvatar } : active);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 401) {
+        setAuthExpired(true);
+        setError('Сессия закончилась. Войдите в аккаунт снова.');
+      } else {
+        setAvatarError(cause instanceof ApiError ? cause.message : 'Не удалось сохранить фото профиля.');
+      }
+    } finally {
+      avatarUpdateInFlight.current = false;
+      setSavingAvatar(false);
+    }
+  };
+
   if (!session || loading) {
     return (
       <ThemedView style={styles.loadingContainer}>
@@ -236,6 +301,12 @@ export default function ProfileScreen() {
       </ThemedView>
     );
   }
+
+  const canEditAvatar = session.role === 'user' && !!session.token;
+  const avatar = session.avatar || (isDemoProfile ? demoProfile.avatar : '');
+  const avatarView = avatar
+    ? <Image source={{ uri: avatar }} style={styles.avatar} />
+    : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>;
 
   return (
     <ThemedView style={styles.container}>
@@ -259,13 +330,32 @@ export default function ProfileScreen() {
         )}
         <View style={styles.headerCard}>
           <View style={styles.profileIdentityRow}>
-            {isDemoProfile || session.avatar ? <Image source={{ uri: isDemoProfile ? demoProfile.avatar : session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
+            {canEditAvatar ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={session.avatar ? 'Сменить фото профиля' : 'Добавить фото профиля'}
+                accessibilityState={{ disabled: savingAvatar, busy: savingAvatar }}
+                disabled={savingAvatar}
+                onPress={() => void changeAvatar(false)}
+              >
+                {avatarView}
+                <View style={styles.avatarCamera}>
+                  {savingAvatar ? <ActivityIndicator size="small" color="#FEFAE0" /> : <Ionicons name="camera-outline" size={17} color="#FEFAE0" />}
+                </View>
+              </TouchableOpacity>
+            ) : avatarView}
             <View style={styles.profileIdentity}>
               <ThemedText type="title" style={styles.displayName}>{isDemoProfile ? demoProfile.name : `${session.name}${session.surname && !isCompany ? ` ${session.surname}` : ''}`}</ThemedText>
               {isDemoProfile && <Text style={styles.profileSubtitle}>{demoProfile.subtitle}</Text>}
               {isDemoProfile && <View style={styles.accountTag}><Text style={styles.accountTagText}>{demoProfile.status}</Text></View>}
+              {canEditAvatar && !!session.avatar && (
+                <TouchableOpacity accessibilityRole="button" disabled={savingAvatar} onPress={() => void changeAvatar(true)} style={styles.removeAvatar}>
+                  <Text style={styles.removeAvatarText}>Удалить фото</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
+          {!!avatarError && <Text accessibilityRole="alert" style={styles.avatarError}>{avatarError}</Text>}
           <View style={styles.statsRow}>
             {headerStats.map(stat => (
               <View key={stat.label} style={styles.statCard}>
@@ -479,6 +569,10 @@ const baseStyles = StyleSheet.create({
   profileIdentityRow: { flexDirection: 'row', alignItems: 'center', gap: 16, width: '100%' },
   profileIdentity: { flex: 1, alignItems: 'flex-start', gap: 5 },
   avatarPlaceholder: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#F0ECCD', alignItems: 'center', justifyContent: 'center' },
+  avatarCamera: { position: 'absolute', right: 0, bottom: 0, width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#606C38', borderWidth: 2, borderColor: '#FEFAE0' },
+  removeAvatar: { justifyContent: 'center', minHeight: 44 },
+  removeAvatarText: { color: '#606C38', fontWeight: '600', fontSize: 13 },
+  avatarError: { color: '#92400e', fontSize: 13, alignSelf: 'flex-start' },
   profileSubtitle: { fontSize: 14, color: '#6F7457' },
   menuCard: { borderRadius: 20, backgroundColor: '#FFFCED', borderWidth: 1, borderColor: '#D9D6B5', paddingHorizontal: 14 },
   menuRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9D6B5' },

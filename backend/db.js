@@ -16,7 +16,8 @@ const schema = `
     name TEXT NOT NULL,
     surname TEXT,
     password TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('user', 'company'))
+    role TEXT NOT NULL CHECK (role IN ('user', 'company')),
+    avatar TEXT
   );
 
   CREATE TABLE IF NOT EXISTS posts (
@@ -108,6 +109,10 @@ async function initialize() {
   await exec(schema);
   await exec('BEGIN IMMEDIATE');
   try {
+    const columns = await new Promise((resolve, reject) => {
+      db.all('PRAGMA table_info(users)', (error, rows) => error ? reject(error) : resolve(rows));
+    });
+    if (!columns.some(column => column.name === 'avatar')) await exec('ALTER TABLE users ADD COLUMN avatar TEXT');
     if (await countPosts() === 0) {
       await exec(`
         DELETE FROM contact_info;

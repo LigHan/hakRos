@@ -70,7 +70,7 @@ export default function AuthScreen() {
       const user = result.user;
       const session: UserSession = {
         id: String(user.id), token: result.token, name: user.name, email: user.email,
-        handle: user.handle, avatar: '', accountType: user.role === 'company' ? 'company' : 'user',
+        handle: user.handle, avatar: user.avatar ?? '', accountType: user.role === 'company' ? 'company' : 'user',
         favorites: [], liked: [], following: [], surname: user.surname ?? null, role: user.role,
       };
       await setUserSession(session);

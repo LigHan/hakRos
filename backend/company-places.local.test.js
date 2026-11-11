@@ -7,6 +7,7 @@ const { mkdtemp, unlink, rmdir } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { test } = require('node:test');
+const sqlite = require('sqlite3');
 
 const path = '/api/company/places';
 const password = 'test-password';
@@ -209,4 +210,53 @@ test('Компания управляет только своими карточ
   await api.request(path, 409, { token: freshToken, method: 'POST', body: draft });
   await api.request(publicPath, 404);
   await api.requestCover(keptCover.image, 404);
+});
+
+test('Аватар личного аккаунта обновляется и сохраняется в старой базе', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'hakros-avatar-'));
+  const database = join(directory, 'test.db');
+  let api;
+  t.after(async () => {
+    await api?.stop();
+    await unlink(database);
+    await rmdir(directory);
+  });
+  const legacy = new sqlite.Database(database);
+  try {
+    await new Promise((resolve, reject) => {
+      legacy.exec(`CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL, surname TEXT, password TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('user', 'company'))
+      )`, error => error ? reject(error) : resolve());
+    });
+  } finally {
+    await new Promise((resolve, reject) => legacy.close(error => error ? reject(error) : resolve()));
+  }
+
+  api = await startApi(database);
+  const avatar = 'data:image/jpeg;base64,' + coverBase64;
+  const avatarPath = '/api/profile/avatar';
+  const email = 'user@local.test';
+  const login = () => api.request('/login', 200, {
+    method: 'POST', body: { email, password: 'demo1234' },
+  });
+  const { user, token } = await login();
+  const companyToken = await api.login('company@local.test', 'demo1234');
+  const update = (expected, token, avatar) => api.request(avatarPath, expected, {
+    token, method: 'PUT', body: { avatar },
+  });
+  assert.equal(user.avatar, null);
+  await update(401, undefined, avatar);
+  await update(403, companyToken, avatar);
+  await update(400, token, 'https://example.invalid/avatar.jpg');
+  await update(400, token, 'data:image/jpeg;base64,bm90LWEtanBlZw==');
+  assert.deepEqual(await update(200, token, avatar), { avatar });
+
+  await api.stop();
+  api = await startApi(database);
+  const restarted = await login();
+  assert.equal(restarted.user.avatar, avatar);
+  assert.deepEqual(await update(200, restarted.token, null), { avatar: null });
+  assert.equal((await login()).user.avatar, null);
 });

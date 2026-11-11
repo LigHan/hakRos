@@ -6,6 +6,7 @@ const express = require('express');
 const db = require('./db');
 const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
+const connections = require('./connections')(db, statistics.auth);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -20,6 +21,7 @@ const endpoints = [
   'GET /api/posts/:id',
   'POST /register',
   'POST /login',
+  'GET /api/connections',
 ];
 
 app.use(cors({
@@ -125,6 +127,7 @@ app.post('/login', async (req, res) => {
 });
 
 app.use('/api', statistics.router);
+app.use('/api/connections', connections.router);
 // Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
 app.use('/api/admin', require('./admin')(db, statistics.auth));
 
@@ -154,12 +157,13 @@ function reportStartupError(error) {
 
 db.ready.then(async () => {
   await statistics.initialize();
-  app.listen(PORT, HOST, error => {
+  await connections.initialize();
+  const server = app.listen(PORT, HOST, error => {
     if (error) {
       reportStartupError(error);
       return;
     }
-    console.log(`API доступно по адресу http://${HOST}:${PORT}/api`);
+    console.log(`API доступно по адресу http://${HOST}:${server.address().port}/api`);
   });
 }).catch(reportStartupError);
 

@@ -16,6 +16,7 @@ import {
   View
 } from 'react-native';
 
+import { PlaceSubscriptionButton } from '@/components/place-subscription';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
@@ -311,6 +312,7 @@ function PlaceDetails({ id }: { id?: string }) {
               </View>
             </View>
 
+            <PlaceSubscriptionButton placeId={post.id} />
             <Text style={styles.bio}>{post.bio}</Text>
 
             <TouchableOpacity style={styles.addressRow} onPress={openInMap}>

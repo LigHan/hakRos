@@ -179,7 +179,11 @@ export default function ConnectionsScreen() {
               <Action title="Отменить" secondary disabled={disabled} onPress={() => void changeFriend(person, 'remove')} />
             )} />
             <PeopleSection title="Мои друзья" empty="Найдите друга по имени или ID." people={connections.friends} actions={person => (
-              <Action title="Удалить из друзей" secondary disabled={disabled} onPress={() => void changeFriend(person, 'remove')} />
+              <>
+                <Action title="На карте" secondary disabled={disabled}
+                  onPress={() => router.push({ pathname: '/map', params: { focusType: 'user', focusId: person.id } })} />
+                <Action title="Удалить из друзей" secondary disabled={disabled} onPress={() => void changeFriend(person, 'remove')} />
+              </>
             )} />
           </>
         )}

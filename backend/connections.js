@@ -41,7 +41,7 @@ function normalizeName(name) {
   return name.normalize('NFKC').toLocaleLowerCase('ru');
 }
 
-module.exports = function createConnections(db, auth) {
+module.exports = function createConnections(db, auth, { onFriendRemoved } = {}) {
   const router = express.Router();
 
   const initialize = () => new Promise((resolve, reject) => {
@@ -173,7 +173,8 @@ module.exports = function createConnections(db, auth) {
   });
 
   router.delete('/friends/:friendId', async (_req, res) => {
-    await run('DELETE FROM friendships WHERE low_id = ? AND high_id = ?', res.locals.pair);
+    const changed = await run('DELETE FROM friendships WHERE low_id = ? AND high_id = ?', res.locals.pair);
+    if (changed) onFriendRemoved?.(res.locals.userId, res.locals.friendId);
     res.json({ ok: true });
   });
 

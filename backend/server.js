@@ -6,9 +6,9 @@ const express = require('express');
 const db = require('./db');
 const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
-const connections = require('./connections')(db, statistics.auth);
-const social = require('./social')(db, statistics.auth);
 const map = require('./map')(db, statistics.auth, statistics.optionalAuth);
+const connections = require('./connections')(db, statistics.auth, { onFriendRemoved: map.revokeFriendship });
+const social = require('./social')(db, statistics.auth);
 const path = require('node:path');
 const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
 

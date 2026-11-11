@@ -45,15 +45,16 @@
     markers.forEach(marker => marker.remove()); markers = [];
     for (const point of [...(state.places || []), ...(state.people || [])]) {
       if (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) continue;
-      const element = document.createElement('button');
+      const element = document.createElement('div');
       element.className = 'pin' + (point.kind === 'person' ? ' person' : '');
+      element.setAttribute('role', 'button');
       element.setAttribute('aria-label', point.name);
-      // Клик по маркеру открывает его карточку и не выбирает новую точку карты.
-      element.addEventListener('click', event => event.stopPropagation());
       const content = document.createElement('div');
       const title = document.createElement('strong'); title.textContent = point.name;
       const details = document.createElement('div');
-      details.textContent = `${point.kind === 'person' ? 'Пользователь' : 'Место'} · ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
+      details.textContent = point.kind === 'person'
+        ? 'Примерная геопозиция друга'
+        : `Место · ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`;
       content.append(title, details);
       if (point.isOwn && point.reviewStatus) {
         const review = document.createElement('div');

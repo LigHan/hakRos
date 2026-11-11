@@ -1,17 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Keyboard, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import MapCanvas from '@/components/MapCanvas';
 import type { MapCoordinates, MapPoint, MapState } from '@/components/MapCanvas.types';
+import { MapLocationSharing } from '@/components/map-location-sharing';
 import { MapRoutePanel, MapSearchResults, type MapSearchState } from '@/components/map-navigation-controls';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { currentMapCoordinates, findAddresses, findRoute, placeSearchResult, type MapRoute, type MapSearchResult, type RoutePlan, type TravelMode } from '@/lib/map-navigation';
 import { registerMapSearchHandler } from '@/lib/map-search';
 import { api, ApiError, authorized } from '@/lib/statistics';
 import { getUserSession, type UserSession } from '@/lib/user-session';
+
+type FriendLocation = MapCoordinates & { id: string; name: string; updatedAt: number; expiresInMs: number };
+type FriendPin = MapPoint & { expiresAt: number };
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Не удалось выполнить действие';
 
@@ -22,7 +25,7 @@ export default function MapScreen() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [focused, setFocused] = useState(false);
   const [places, setPlaces] = useState<MapPoint[]>([]);
-  const [people, setPeople] = useState<MapPoint[]>([]);
+  const [people, setPeople] = useState<FriendPin[]>([]);
   const [selected, setSelected] = useState<MapCoordinates | null>(null);
   const [center, setCenter] = useState<MapState['center']>(null);
   const [name, setName] = useState('');
@@ -34,7 +37,6 @@ export default function MapScreen() {
   const [routeStatus, setRouteStatus] = useState<'idle' | 'locating' | 'routing'>('idle');
   const [routeError, setRouteError] = useState('');
   const [adding, setAdding] = useState(false);
-  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
@@ -42,7 +44,6 @@ export default function MapScreen() {
   const [myPlacesOpen, setMyPlacesOpen] = useState(false);
   const searchRequest = useRef<AbortController | null>(null);
   const routeRequest = useRef<AbortController | null>(null);
-  const lastPosition = useRef<MapCoordinates | null>(null);
   const handledFocus = useRef('');
   const loadVersion = useRef(0);
   const mapFocused = useRef(false);
@@ -86,15 +87,21 @@ export default function MapScreen() {
   const load = useCallback(async (activeSession: UserSession | null) => {
     if (!mapFocused.current) return;
     const version = ++loadVersion.current;
+    const requestedAt = Date.now();
     const options = activeSession?.token ? {headers:{Authorization:`Bearer ${activeSession.token}`}} : {};
     const [points, locations] = await Promise.allSettled([
-      api('/api/map/places', options), activeSession?.token ? api('/api/map/locations', options) : Promise.resolve([]),
+      api('/api/map/places', options),
+      activeSession?.role === 'user' && activeSession.token ? api('/api/map/locations', options) : Promise.resolve([]),
     ]);
     // An old request must never repaint another account's private places.
     if (!mapFocused.current || version !== loadVersion.current) return;
     if (points.status === 'fulfilled') setPlaces(points.value);
     else { setPlaces([]); setError(messageOf(points.reason)); }
-    setPeople(locations.status === 'fulfilled' ? locations.value.map((p: MapPoint) => ({ ...p, kind: 'person' as const })) : []);
+    const received: FriendLocation[] = locations.status === 'fulfilled' ? locations.value : [];
+    const receivedAt = Date.now();
+    setPeople(received
+      .filter(location => Number.isFinite(location.expiresInMs) && requestedAt + location.expiresInMs > receivedAt)
+      .map(({ expiresInMs, ...location }) => ({ ...location, kind: 'person', expiresAt: requestedAt + expiresInMs })));
     setLoaded(true);
   }, []);
   useFocusEffect(useCallback(() => {
@@ -110,7 +117,7 @@ export default function MapScreen() {
       setPlaces([]);
       setPeople([]);
       setFocused(false);
-      setSharing(false);
+      setSession(null);
       handledFocus.current = '';
       cancelSearch();
       closeDestination();
@@ -118,41 +125,20 @@ export default function MapScreen() {
   }, [load, cancelSearch, closeDestination]));
   useEffect(() => {
     if (!focused) return;
-    const timer = setInterval(() => void load(session), 20000);
+    const interval = session?.role === 'user' ? 10_000 : 20_000;
+    const timer = setInterval(() => void load(session), interval);
     return () => clearInterval(timer);
   }, [focused, load, session]);
 
   useEffect(() => {
-    if (!sharing || !focused) return;
-    let active = true;
-    let subscription: Location.LocationSubscription | undefined;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    let pending = Promise.resolve();
-    const send = (position: MapCoordinates) => {
-      pending = pending.then(async () => {
-        if (active) await authorized('/api/map/location', { method: 'PUT', body: JSON.stringify(position) });
-      }).catch(e => { if (active) { setError(messageOf(e)); setSharing(false); } });
-    };
-    void (async () => {
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status !== 'granted') throw new Error('Разрешите доступ к геолокации, чтобы показывать своё положение');
-        if (!active) return;
-        subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 20000, distanceInterval: 25 }, position => {
-          if (!active) return;
-          const coordinates = { latitude: position.coords.latitude, longitude: position.coords.longitude };
-          lastPosition.current = coordinates; send(coordinates);
-        });
-        if (!active) { subscription.remove(); return; }
-        timer = setInterval(() => { if (lastPosition.current) send(lastPosition.current); }, 45000);
-      } catch (e) { if (active) { setError(messageOf(e)); setSharing(false); } }
-    })();
-    return () => {
-      active = false; subscription?.remove(); if (timer) clearInterval(timer); lastPosition.current = null;
-      // Дождаться начатой отправки, чтобы отключение не было перезаписано поздним PUT.
-      void pending.then(() => authorized('/api/map/location', { method: 'DELETE' })).catch(() => {});
-    };
-  }, [sharing, focused]);
+    if (!focused || people.length === 0) return;
+    const deadline = people.reduce((earliest, friend) => Math.min(earliest, friend.expiresAt), Infinity);
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      setPeople(current => current.filter(friend => friend.expiresAt > now));
+    }, Math.max(0, deadline - Date.now()));
+    return () => clearTimeout(timer);
+  }, [focused, people]);
 
   const submitPoint = useCallback(async (id: string) => {
     try {
@@ -169,8 +155,8 @@ export default function MapScreen() {
     const timer = setTimeout(() => {
     if (params.focusType === 'user') {
       const user = people.find(item => item.id === focusId);
-      if (user) { move(user); setNotice(`Показано положение: ${user.name}`); handledFocus.current = key; }
-      else if (session) { setNotice('Пользователь сейчас не делится геопозицией'); handledFocus.current = key; }
+      if (user) { move(user); setNotice(''); handledFocus.current = key; }
+      else if (session) { setNotice('Геопозиция друга сейчас недоступна'); handledFocus.current = key; }
     } else if (params.focusType === 'point' && session?.role === 'admin') {
       const point = places.find(item => item.id === focusId);
       if (point) { move(point); setNotice(`Показано место: ${point.name}`); }
@@ -309,6 +295,10 @@ export default function MapScreen() {
       <View style={styles.headerCard}>
         <Ionicons name="map" size={20} color={palette.olive} />
         <Text accessibilityRole="header" style={styles.title}>Карта города</Text>
+        {focused && session?.role === 'user' && session.token && (
+          <MapLocationSharing key={session.id} token={session.token} onError={canvasError}
+            onOpenFriends={() => router.push('/connections')} />
+        )}
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Моё местоположение" onPress={() => void locate()}>
           <Ionicons name="locate" size={23} color={palette.olive} />
         </TouchableOpacity>
@@ -339,11 +329,10 @@ export default function MapScreen() {
       ) : <ScrollView style={styles.panel} keyboardShouldPersistTaps="handled">
         <View style={styles.actions}>
           <TouchableOpacity style={styles.primary} onPress={() => { setAdding(!adding); setError(''); }}><Text style={styles.primaryText}>{adding ? 'Отменить' : '+ Добавить место'}</Text></TouchableOpacity>
-          {session?.role === 'user' && <TouchableOpacity style={styles.secondary} onPress={() => { setSharing(!sharing); setError(''); }}><Text style={styles.secondaryText}>{sharing ? 'Скрыть меня' : 'Показывать меня'}</Text></TouchableOpacity>}
           {session?.role === 'user' && session?.token && <TouchableOpacity style={styles.secondary} onPress={() => router.push('/connections')}><Text style={styles.secondaryText}>Друзья</Text></TouchableOpacity>}
           {session?.token && <TouchableOpacity style={styles.secondary} onPress={() => setMyPlacesOpen(!myPlacesOpen)}><Text style={styles.secondaryText}>Мои точки</Text></TouchableOpacity>}
         </View>
-        {adding ? <View style={styles.form}><Text style={styles.hint}>Нажмите на карту, чтобы выбрать точку</Text><TextInput accessibilityLabel="Название места" placeholder="Название места" value={name} onChangeText={setName} maxLength={120} style={styles.field} /><Text style={styles.hint}>{selected ? `${selected.latitude.toFixed(5)}, ${selected.longitude.toFixed(5)}` : 'Точка не выбрана'}</Text><TouchableOpacity style={styles.primary} disabled={saving} onPress={() => void save()}><Text style={styles.primaryText}>{saving ? 'Сохранение…' : 'Сохранить место'}</Text></TouchableOpacity></View> : <Text style={styles.hint}>{sharing ? 'Ваше положение видно вошедшим пользователям, пока открыта карта.' : 'Места и люди, которые разрешили показ геопозиции.'}</Text>}
+        {adding ? <View style={styles.form}><Text style={styles.hint}>Нажмите на карту, чтобы выбрать точку</Text><TextInput accessibilityLabel="Название места" placeholder="Название места" value={name} onChangeText={setName} maxLength={120} style={styles.field} /><Text style={styles.hint}>{selected ? `${selected.latitude.toFixed(5)}, ${selected.longitude.toFixed(5)}` : 'Точка не выбрана'}</Text><TouchableOpacity style={styles.primary} disabled={saving} onPress={() => void save()}><Text style={styles.primaryText}>{saving ? 'Сохранение…' : 'Сохранить место'}</Text></TouchableOpacity></View> : <Text style={styles.hint}>Доступные вам места и друзья, которые поделились геопозицией.</Text>}
         {!session && <Text style={styles.hint}>Войдите, чтобы добавлять места и видеть людей.</Text>}
         {myPlacesOpen && <View style={styles.form}><Text style={styles.hint}>Мои точки</Text>{places.filter(place => place.isOwn).length === 0 && <Text style={styles.hint}>Вы ещё не добавили точки.</Text>}{places.filter(place => place.isOwn).map(place => <View key={place.id} style={styles.friendRow}><TouchableOpacity onPress={() => move(place)}><Text style={styles.secondaryText}>{place.name}</Text></TouchableOpacity><Text style={styles.hint}>{place.reviewStatus === 'approved' ? 'Опубликовано' : place.reviewStatus === 'pending' ? 'На проверке' : 'Видно друзьям'}</Text>{place.reviewStatus === 'private' && <TouchableOpacity onPress={() => void submitPoint(place.id)}><Text style={styles.link}>Отправить на проверку</Text></TouchableOpacity>}</View>)}</View>}
       </ScrollView>}

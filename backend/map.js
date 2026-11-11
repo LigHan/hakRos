@@ -3,17 +3,15 @@
 const express = require('express');
 const crypto = require('node:crypto');
 const { createMapNavigationRouter, validCoordinates } = require('./map-navigation');
+const createFriendLocations = require('./map-friend-locations');
 
-// Позиции людей живут только в памяти процесса и автоматически устаревают.
-module.exports = function createMapRouter(db, auth, optionalAuth) {
+module.exports = function createMapRouter(db, auth, optionalAuth, locationOptions) {
   const router = express.Router();
-  router.use(createMapNavigationRouter());
-  const locations = new Map();
-  const ttl = 5 * 60 * 1000;
+  const { router: friendLocations, hide, revokeFriendship } = createFriendLocations(db, auth, locationOptions);
+  router.use(createMapNavigationRouter(), friendLocations);
   const all = (sql, args = []) => new Promise((resolve, reject) => db.all(sql, args, (e, rows) => e ? reject(e) : resolve(rows)));
   const get = (sql, args = []) => new Promise((resolve, reject) => db.get(sql, args, (e, row) => e ? reject(e) : resolve(row)));
   const run = (sql, args = []) => new Promise((resolve, reject) => db.run(sql, args, function (e) { e ? reject(e) : resolve(this); }));
-  const prune = () => { for (const [id, location] of locations) if (Date.now() - location.updatedAt > ttl) locations.delete(id); };
   const initialize = async () => {
     await run(`CREATE TABLE IF NOT EXISTS map_places (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, latitude REAL NOT NULL, longitude REAL NOT NULL,
@@ -61,21 +59,5 @@ module.exports = function createMapRouter(db, auth, optionalAuth) {
     await run('DELETE FROM map_places WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   });
-  router.get('/locations', auth, async (_req, res) => {
-    prune();
-    res.set('Cache-Control', 'no-store');
-    res.json([...locations.values()]);
-  });
-  router.put('/location', auth, async (req, res) => {
-    if (req.account.role !== 'user') return res.status(403).json({ error: 'Доступно аккаунту пользователя' });
-    const { latitude, longitude } = req.body || {};
-    if (!validCoordinates(latitude, longitude)) return res.status(400).json({ error: 'Некорректные координаты' });
-    const user = await get('SELECT id, name FROM users WHERE id = ?', [req.account.id]);
-    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
-    prune();
-    locations.set(String(user.id), { id: String(user.id), name: user.name, latitude, longitude, updatedAt: Date.now() });
-    res.set('Cache-Control', 'no-store').json({ ok: true });
-  });
-  router.delete('/location', auth, (req, res) => { locations.delete(String(req.account.id)); res.json({ ok: true }); });
-  return { router, initialize, hide: id => locations.delete(String(id)) };
+  return { router, initialize, hide, revokeFriendship };
 };

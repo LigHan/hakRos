@@ -1,3 +1,4 @@
+import { track } from '@/lib/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -152,11 +153,13 @@ export default function NearbyScreen() {
   };
 
   const buildRoute = (post: NearbyPost) => {
+    track('route_requested', post.id);
     router.push('/map');
     triggerMapRoute(post.address);
   };
 
   const handleOpenDetail = (post: NearbyPost) => {
+    track('card_view', post.id);
     setActivePost(post);
     setDetailVisible(true);
   };
@@ -936,3 +939,4 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 });
+

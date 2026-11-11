@@ -1,3 +1,4 @@
+import { track } from '@/lib/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -6,6 +7,8 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -51,6 +54,7 @@ function PlaceDetails({ id }: { id?: string }) {
           return;
         }
         const [liked, favorite] = await Promise.all([isPostLiked(id), isPostFavorite(id)]);
+        track('card_view', postData.id);
         setPost(postData);
         setIsLiked(liked);
         setIsFavorite(favorite);
@@ -140,9 +144,23 @@ function PlaceDetails({ id }: { id?: string }) {
   };
 
   const buildRoute = () => {
+    if (post) track('route_requested', post.id);
     if (!post) return;
     router.push('/map');
     triggerMapRoute(post.address);
+  };
+
+  const sharePlace = async () => {
+    if (!post) return;
+    track('share_initiated', post.id);
+    const message = `${post.place} — ${post.address}`;
+    try {
+      if (Platform.OS === 'web') {
+        if (navigator.share) await navigator.share({ title: post.place, text: message });
+        else if (navigator.clipboard) await navigator.clipboard.writeText(message);
+        else throw new Error('Недоступен обмен');
+      } else await Share.share({ message });
+    } catch (error) { console.warn('Не удалось поделиться местом', error); }
   };
 
   const handleCloseAuth = () => {
@@ -303,6 +321,11 @@ function PlaceDetails({ id }: { id?: string }) {
             <TouchableOpacity style={styles.actionButton} onPress={buildRoute}>
               <Ionicons name="navigate-outline" size={24} color="#1C1C1E" />
               <Text style={styles.actionText}>Маршрут</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.actionButton} onPress={sharePlace}>
+              <Ionicons name="share-outline" size={24} color="#1C1C1E" />
+              <Text style={styles.actionText}>Поделиться</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.actionButton} onPress={openInMap}>
@@ -883,3 +906,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+

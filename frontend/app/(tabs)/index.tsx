@@ -1,3 +1,4 @@
+import { track } from '@/lib/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -156,6 +157,7 @@ export default function FeedScreen() {
   };
 
   const handleBuildRoute = (post: Post) => {
+    track('route_requested', post.id);
     router.push('/map');
     triggerMapRoute(post.address);
   };
@@ -212,6 +214,7 @@ export default function FeedScreen() {
   };
 
   const handleOpenDetail = (post: Post) => {
+    track('card_view', post.id);
     setDetailPost(post);
     setDetailVisible(true);
   };
@@ -1330,3 +1333,4 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 });
+

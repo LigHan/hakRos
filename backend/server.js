@@ -5,10 +5,15 @@ const cors = require('cors');
 const express = require('express');
 const db = require('./db');
 const databaseService = require('./database-service');
+const statistics = require('./statistics')(db);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
+// Test accounts have a published password, so demo mode must never listen on a network interface.
+if (process.env.LOCAL_DEMO === '1' && !['127.0.0.1', 'localhost', '::1'].includes(HOST)) {
+  throw new Error('LOCAL_DEMO разрешён только на localhost');
+}
 const endpoints = [
   'GET /api/posts',
   'GET /api/stories',
@@ -98,6 +103,10 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Email и пароль обязательны' });
   }
 
+  if (process.env.LOCAL_DEMO === '1' && email === 'admin@local.test' && password === 'demo1234') {
+    const user = { id: 'local-admin', name: 'Администратор', email, role: 'admin', handle: 'admin', surname: null };
+    return res.json({ user, token: statistics.issue(user) });
+  }
   const user = await findUser(email);
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return res.status(401).json({ error: 'Неверный email или пароль' });
@@ -107,8 +116,11 @@ app.post('/login', async (req, res) => {
   res.json({
     message: 'Логин успешен',
     user: { ...safeUser, handle: email.split('@')[0].toLowerCase() },
+    token: statistics.issue({ id: String(user.id), role: user.role }),
   });
 });
+
+app.use('/api', statistics.router);
 
 app.use((req, res) => {
   res.status(404).json({
@@ -134,7 +146,8 @@ function reportStartupError(error) {
   process.exitCode = 1;
 }
 
-db.ready.then(() => {
+db.ready.then(async () => {
+  await statistics.initialize();
   app.listen(PORT, HOST, error => {
     if (error) {
       reportStartupError(error);
@@ -143,3 +156,4 @@ db.ready.then(() => {
     console.log(`API доступно по адресу http://${HOST}:${PORT}/api`);
   });
 }).catch(reportStartupError);
+

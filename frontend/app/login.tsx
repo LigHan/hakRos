@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 
-import { databaseService, type Post } from '@/constants/content';
+import { api } from '@/lib/statistics';
 import { setUserSession, type UserSession } from '@/lib/user-session';
 
 const THEME = {
@@ -36,6 +36,7 @@ export default function AuthScreen() {
   const [companyName, setCompanyName] = useState('');
   const [accountType, setAccountType] = useState<'user' | 'company'>('user');
   const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState('');
 
   const isRegister = mode === 'register';
   const isCompany = accountType === 'company';
@@ -53,56 +54,25 @@ export default function AuthScreen() {
 
     Keyboard.dismiss();
     setLoading(true);
+    setAuthError('');
 
     try {
-      // Получаем посты из базы данных для создания демо-данных
-      let postsData: Post[] = [];
-      try {
-        postsData = await databaseService.getPosts();
-        console.log('✅ Посты загружены для создания сессии:', postsData.length);
-      } catch {
-        console.warn('⚠️ Не удалось загрузить посты, используем пустые данные');
+      const normalizedEmail = email.trim().toLowerCase();
+      if (isRegister) {
+        await api('/register', { method: 'POST', body: JSON.stringify({ email: normalizedEmail, name: isCompany ? companyName.trim() : name.trim(), password, role: accountType }) });
       }
-
-      // Создаем демо-данные на основе реальных постов
-      const demoFavorites = postsData.slice(0, 3).map(post => post.id);
-      const demoLiked = postsData.slice(1, 4).map(post => post.id);
-      const demoFollowing = postsData.slice(0, 5).map(post => ({
-        id: post.id,
-        name: post.user,
-        handle: post.userHandle,
-        avatar: post.userAvatar,
-        description: post.bio,
-      }));
-
-      const primaryName =
-        (isRegister ? (isCompany ? companyName.trim() : name.trim()) : name.trim()) ||
-        email.trim().split('@')[0] ||
-        'Гость';
-
-      const normalizedHandle =
-        email.trim().split('@')[0]?.replace(/[^a-z0-9_]/gi, '').toLowerCase() || `user${Date.now()}`;
-
-const session: UserSession = {
-  id: `user-${Date.now()}`, // string ID
-  name: primaryName,
-  email: email.trim(),
-  handle: normalizedHandle,
-  avatar: `https://i.pravatar.cc/200?u=${encodeURIComponent(email.trim() || primaryName)}`,
-  accountType,
-  favorites: demoFavorites, // Теперь это поле существует
-  liked: demoLiked, // Теперь это поле существует
-  following: demoFollowing,
-  // Добавляем недостающие поля
-  surname: null,
-  role: accountType, // accountType соответствует 'user' | 'company'
-};
-
+      const result = await api('/login', { method: 'POST', body: JSON.stringify({ email: normalizedEmail, password }) });
+      const user = result.user;
+      const session: UserSession = {
+        id: String(user.id), token: result.token, name: user.name, email: user.email,
+        handle: user.handle, avatar: '', accountType: user.role === 'company' ? 'company' : 'user',
+        favorites: [], liked: [], following: [], surname: user.surname ?? null, role: user.role,
+      };
       await setUserSession(session);
       router.replace('/profile');
     } catch (error) {
       console.error('❌ Ошибка при создании сессии:', error);
-      Alert.alert('Ошибка', 'Не удалось войти в систему. Попробуйте еще раз.');
+      setAuthError(error instanceof Error ? error.message : 'Не удалось войти в систему.');
     } finally {
       setLoading(false);
     }
@@ -237,6 +207,7 @@ const session: UserSession = {
               />
             </View>
 
+            {authError ? <Text accessibilityRole="alert" style={{ color: '#b42318', marginBottom: 12 }}>{authError}</Text> : null}
             {!isRegister && (
               <TouchableOpacity style={styles.linkRow} onPress={() => router.push('/modal')}>
                 <Ionicons name="help-circle-outline" size={18} color={THEME.primary} />
@@ -494,3 +465,4 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 });
+

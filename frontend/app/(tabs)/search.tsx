@@ -1,3 +1,4 @@
+import { track } from '@/lib/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -44,13 +45,14 @@ export default function SearchScreen() {
   const [activePost, setActivePost] = useState<SearchPost | null>(null);
   const [isDetailVisible, setDetailVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [postLikes, setPostLikes] = useState<Record<string, boolean>>({});
   const [postFavorites, setPostFavorites] = useState<Record<string, boolean>>({});
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
 
   const loadData = useCallback(() => {
     return databaseService.getPosts()
-      .then(setPostsData)
+      .then(data => { setPostsData(data); setDataLoaded(true); })
       .catch(error => console.error('Не удалось загрузить места', error))
       .finally(() => setLoading(false));
   }, []);
@@ -178,6 +180,11 @@ export default function SearchScreen() {
   );
   const isSearching = searchQuery.trim().length > 0;
   const hasResults = searchResults.length > 0;
+  useEffect(() => {
+    if (loading || !dataLoaded || !isSearching) return;
+    const timer = setTimeout(() => { track('search'); if (!hasResults) track('search_no_results'); }, 800);
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedCategory, loading, dataLoaded, isSearching, hasResults]);
 
   useEffect(() => {
     if (!hasResults) {
@@ -212,11 +219,13 @@ export default function SearchScreen() {
   };
 
   const buildRoute = (post: SearchPost) => {
+    track('route_requested', post.id);
     router.push('/map');
     triggerMapRoute(post.address);
   };
 
   const handleOpenDetail = (post: SearchPost) => {
+    track('card_view', post.id);
     setActivePost(post);
     setDetailVisible(true);
   };
@@ -1075,3 +1084,4 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 });
+

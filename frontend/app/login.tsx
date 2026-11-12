@@ -79,6 +79,8 @@ export default function AuthScreen() {
         router.replace('/admin');
       } else if (returnTo === 'post' || returnTo === 'story') {
         router.replace({ pathname: '/create', params: { kind: returnTo } });
+      } else if (returnTo === 'messages') {
+        router.replace('/messages');
       } else {
         router.replace('/');
       }

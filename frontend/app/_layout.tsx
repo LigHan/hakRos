@@ -84,9 +84,11 @@ function AppLayout() {
         <Stack.Screen name="settings" options={{ title: 'Настройки', headerStyle: { backgroundColor: palette.cream }, headerTintColor: palette.forest }} />
         <Stack.Screen name="post/[id]" options={{ title: 'Публикация' }} />
         <Stack.Screen name="place-post/[id]" options={{ title: 'Публикация места' }} />
+        <Stack.Screen name="messages/index" options={{ title: 'Сообщения' }} />
+        <Stack.Screen name="messages/[friendId]" options={{ title: 'Диалог' }} />
       </Stack>
     </View>
-    <FloatingNavigation />
+    {!pathname.startsWith('/messages') && <FloatingNavigation />}
     </PostPanelStateProvider>
   </View>;
 

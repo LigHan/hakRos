@@ -8,6 +8,7 @@ const databaseService = require('./database-service');
 const statistics = require('./statistics')(db);
 const map = require('./map')(db, statistics.auth, statistics.optionalAuth);
 const connections = require('./connections')(db, statistics.auth, { onFriendRemoved: map.revokeFriendship });
+const messages = require('./messages')(db, statistics.auth);
 const accountProfiles = require('./account-profile')(db, statistics.auth);
 const media = require('./media')(db, statistics.auth);
 const social = require('./social')(db, statistics.auth, media);
@@ -32,6 +33,7 @@ const endpoints = [
   'POST /register',
   'POST /login',
   'GET /api/connections',
+  'GET /api/messages',
   'GET /api/company/places',
 ];
 
@@ -161,6 +163,7 @@ app.post('/login', async (req, res) => {
 app.post('/api/logout', statistics.auth, (req, _res, next) => { map.hide(req.account.id); next(); });
 app.use('/api', statistics.router);
 app.use('/api/connections', connections.router);
+app.use('/api/messages', messages.router);
 app.use('/api/social', social.router);
 // Отдельный модуль подключён после общей аутентификации статистики; доступ ограничен внутри модуля.
 app.use('/api/admin', require('./admin')(db, statistics.auth));
@@ -192,6 +195,7 @@ function reportStartupError(error) {
 db.ready.then(async () => {
   await statistics.initialize();
   await connections.initialize();
+  await messages.initialize();
   await leisurePlans.initialize();
   await accountProfiles.initialize();
   await media.initialize();

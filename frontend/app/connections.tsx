@@ -7,16 +7,18 @@ import { findPeople, getConnections, updateFriend, type Connections, type Person
 import { ApiError } from '@/lib/statistics';
 import { webData } from '@/lib/web-data';
 
-function Action({ title, onPress, disabled = false, secondary = false }: {
+function Action({ title, onPress, disabled = false, secondary = false, label }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   secondary?: boolean;
+  label?: string;
 }) {
   const styles = useAppStyles(baseStyles);
   return (
     <TouchableOpacity
       accessibilityRole="button"
+      accessibilityLabel={label}
       disabled={disabled}
       onPress={onPress}
       style={[styles.action, secondary && styles.secondaryAction, disabled && styles.disabled]}
@@ -170,6 +172,15 @@ export default function ConnectionsScreen() {
               }} />
             )}
 
+            <PeopleSection title="Мои друзья" empty="Найдите друга по имени или ID." people={connections.friends} actions={person => (
+              <>
+                <Action title="Написать" label={`Написать: ${person.name}`} disabled={disabled}
+                  onPress={() => router.push({ pathname: '/messages/[friendId]', params: { friendId: person.id } })} />
+                <Action title="На карте" secondary disabled={disabled}
+                  onPress={() => router.push({ pathname: '/map', params: { focusType: 'user', focusId: person.id } })} />
+                <Action title="Удалить из друзей" secondary disabled={disabled} onPress={() => void changeFriend(person, 'remove')} />
+              </>
+            )} />
             <PeopleSection title="Входящие заявки" empty="Нет входящих заявок." people={connections.incomingRequests} actions={person => (
               <>
                 <Action title="Принять" disabled={disabled} onPress={() => void changeFriend(person, 'accept')} />
@@ -178,13 +189,6 @@ export default function ConnectionsScreen() {
             )} />
             <PeopleSection title="Отправленные заявки" empty="Нет отправленных заявок." people={connections.outgoingRequests} actions={person => (
               <Action title="Отменить" secondary disabled={disabled} onPress={() => void changeFriend(person, 'remove')} />
-            )} />
-            <PeopleSection title="Мои друзья" empty="Найдите друга по имени или ID." people={connections.friends} actions={person => (
-              <>
-                <Action title="На карте" secondary disabled={disabled}
-                  onPress={() => router.push({ pathname: '/map', params: { focusType: 'user', focusId: person.id } })} />
-                <Action title="Удалить из друзей" secondary disabled={disabled} onPress={() => void changeFriend(person, 'remove')} />
-              </>
             )} />
           </>
         )}
@@ -195,7 +199,7 @@ export default function ConnectionsScreen() {
 
 const baseStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FEFAE0' },
-  content: { padding: 20, paddingBottom: 40, gap: 16 },
+  content: { padding: 20, paddingBottom: 140, gap: 16 },
   top: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   input: {

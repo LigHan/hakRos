@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { getPublicProfile, type AccountProfile } from '@/lib/account-profile';
 import { palette, useAppStyles } from '@/lib/app-appearance';
+import { getConnections } from '@/lib/connections';
 import { getSocialFeed, type SocialItem } from '@/lib/social';
 import { SocialMedia } from '@/components/social-media';
 import { usePostPreview } from '@/lib/web-post-preview';
+import { webData } from '@/lib/web-data';
 
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,6 +24,16 @@ function PublicProfile({ id }: { id: string }) {
   const [posts, setPosts] = useState<SocialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isFriend, setIsFriend] = useState(false);
+
+  useFocusEffect(useCallback(() => {
+    const controller = new AbortController();
+    setIsFriend(false);
+    void getConnections(controller.signal).then(connections => {
+      if (!controller.signal.aborted) setIsFriend(connections.friends.some(person => person.id === id));
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [id]));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -41,7 +53,7 @@ function PublicProfile({ id }: { id: string }) {
     return () => controller.abort();
   }, [id]);
 
-  return <ScrollView style={styles.page} contentContainerStyle={styles.content}>
+  return <ScrollView {...webData({ hakrosFocus: 'public-profile' })} style={styles.page} contentContainerStyle={styles.content}>
     <Pressable accessibilityRole="button" accessibilityLabel="Назад" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={styles.back}><Ionicons name="arrow-back" color={palette.forest} size={24} /><Text style={styles.backText}>Профиль</Text></Pressable>
     {loading && !profile && <ActivityIndicator color={palette.olive} />}
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
@@ -51,6 +63,13 @@ function PublicProfile({ id }: { id: string }) {
         <View style={styles.identityCopy}><Text style={styles.name}>{[profile.name, profile.surname].filter(Boolean).join(' ')}</Text><Text style={styles.status}>{profile.isPrivate ? 'Приватный профиль' : 'Открытый профиль'}</Text></View>
       </View>
       {!!profile.bio && <Text style={styles.bio}>{profile.bio}</Text>}
+      {isFriend && (
+        <Pressable accessibilityRole="button" style={styles.messageButton}
+          onPress={() => router.push({ pathname: '/messages/[friendId]', params: { friendId: profile.id } })}>
+          <Ionicons name="chatbubble-outline" size={19} color={palette.cream} />
+          <Text style={styles.buttonText}>Написать</Text>
+        </Pressable>
+      )}
       {!profile.canView ? <View style={styles.locked}><Ionicons name="lock-closed-outline" size={34} color={palette.olive} /><Text style={styles.heading}>Закрытый профиль</Text><Text style={styles.description}>Био, публикации и истории доступны подтверждённым друзьям.</Text><Pressable accessibilityRole="button" onPress={() => router.push('/connections')} style={styles.button}><Text style={styles.buttonText}>Найти в друзьях</Text></Pressable></View> : <View style={styles.posts}>
         <Text style={styles.heading}>Публикации</Text>
         {loading && <ActivityIndicator color={palette.olive} />}
@@ -85,6 +104,8 @@ const baseStyles = StyleSheet.create({
   description: { color: palette.muted, fontSize: 14, lineHeight: 21 },
   button: { backgroundColor: palette.olive, paddingVertical: 13, paddingHorizontal: 22, borderRadius: 15 },
   buttonText: { color: palette.cream, fontWeight: '700' },
+  messageButton: { minHeight: 46, alignSelf: 'flex-start', paddingHorizontal: 16, borderRadius: 14,
+    backgroundColor: palette.olive, flexDirection: 'row', alignItems: 'center', gap: 8 },
   posts: { gap: 15 },
   post: { backgroundColor: palette.surface, padding: 15, borderRadius: 18, gap: 10 },
   selectedShade: { ...StyleSheet.absoluteFill, borderRadius: 18, backgroundColor: 'rgba(20, 25, 14, 0.16)' },

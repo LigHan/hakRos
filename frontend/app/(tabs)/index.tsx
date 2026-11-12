@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PlaceCover } from '@/components/place-photo';
+import { MessagesBell } from '@/components/message-entry';
 import { SketchFrame } from '@/components/sketch-frame';
 import { SocialFeed } from '@/components/social-feed';
 import { databaseService, formatPlaceRating, type Post, type Story } from '@/constants/content';
@@ -105,6 +106,7 @@ export default function RecommendationsScreen() {
           <Text style={styles.subtitle}>Идеи, чем заняться после пар</Text>
         </View>
         {mode === 'sketch' && <Image source={require('@/assets/images/mascot-sketch.png')} style={styles.mascot} accessibilityLabel="Маскот приложения" />}
+        <MessagesBell />
       </View>
       {loading ? <View style={styles.state}><ActivityIndicator color={palette.olive} /><Text style={styles.stateText}>Загружаем места...</Text></View> : error && !hasLoaded ? (
         <View style={styles.state}><Ionicons name="cloud-offline-outline" size={36} color={palette.olive} /><Text style={styles.stateText}>Не удалось загрузить места. Проверьте соединение.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.retry}><Text style={styles.retryText}>Попробовать снова</Text></Pressable></View>
@@ -152,11 +154,11 @@ export default function RecommendationsScreen() {
 
 const baseStyles = StyleSheet.create({
   page: { flex: 1, backgroundColor: palette.cream },
-  header: { paddingHorizontal: 20, paddingTop: 38, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
-  heading: { flex: 1 },
+  header: { paddingHorizontal: 20, paddingTop: 38, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heading: { flex: 1, minWidth: 0 },
   title: { color: palette.forest, fontWeight: '800', fontSize: 27, lineHeight: 36 },
   subtitle: { color: palette.muted, fontSize: 14, marginTop: 2 },
-  mascot: { width: 62, height: 62, resizeMode: 'contain' },
+  mascot: { width: 44, height: 44, resizeMode: 'contain' },
   storySection: { gap: 10, paddingTop: 18 },
   storyHeading: { color: palette.forest, fontSize: 17, fontWeight: '700' },
   storyList: { gap: 13 },

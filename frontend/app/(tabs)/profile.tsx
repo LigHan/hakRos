@@ -1,4 +1,4 @@
-import { useAppStyles } from '@/lib/app-appearance';
+import { palette, useAppStyles } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -20,6 +20,7 @@ import { getCompanyPlaces } from '@/lib/company-places';
 import { getAccountProfile } from '@/lib/account-profile';
 import { getSocialFeed, type SocialItem } from '@/lib/social';
 import { ApiError } from '@/lib/statistics';
+import { webData } from '@/lib/web-data';
 import { PlaceCover } from '@/components/place-photo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -177,7 +178,7 @@ export default function ProfileScreen() {
     );
   }, [companyPosts, isCompany]);
 
-  const headerStats = useMemo(() => {
+  const headerStats = useMemo<{ label: string; value: string; opensFriends?: boolean }[]>(() => {
     if (isCompany) {
       return [
         { label: 'Заведений', value: formatNumber(companyPosts.length) },
@@ -188,7 +189,7 @@ export default function ProfileScreen() {
 
     return [
       { label: 'постов', value: formatNumber(ownSocialItems.filter(item => item.kind === 'post').length) },
-      { label: 'друзей', value: connections ? formatNumber(connections.friends.length) : '—' },
+      { label: 'друзей', value: connections ? formatNumber(connections.friends.length) : '—', opensFriends: true },
       { label: 'сохранённых', value: formatNumber(favoriteCount) },
     ];
   }, [
@@ -234,7 +235,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView {...webData({ hakrosFocus: 'profile' })} style={styles.container}>
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingTop: Math.max(insets.top + 8, 24) }]}
         showsVerticalScrollIndicator={false}
@@ -271,7 +272,17 @@ export default function ProfileScreen() {
             </View>
           </View>
           <View style={styles.statsRow}>
-            {headerStats.map(stat => (
+            {headerStats.map(stat => stat.opensFriends && session.role === 'user' ? (
+              <TouchableOpacity key={stat.label} accessibilityRole="button" accessibilityLabel="Открыть список друзей"
+                accessibilityHint={connections ? `Друзей: ${stat.value}` : undefined}
+                style={[styles.statCard, styles.friendsStat]} onPress={() => router.push('/connections')}>
+                <Text style={styles.statValue}>{stat.value}</Text>
+                <View style={styles.statLink}>
+                  <Text style={styles.statLinkLabel}>{stat.label}</Text>
+                  <Ionicons name="chevron-forward" size={13} color={palette.olive} />
+                </View>
+              </TouchableOpacity>
+            ) : (
               <View key={stat.label} style={styles.statCard}>
                 <Text style={styles.statValue}>{stat.value}</Text>
                 <Text style={styles.statLabel}>{stat.label}</Text>
@@ -280,6 +291,14 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {session.role === 'user' && (
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Сообщения"
+            onPress={() => router.push('/messages')} style={[styles.managePlaces, styles.messagesLink]}>
+            <Ionicons name="chatbubbles-outline" size={20} color={palette.olive} />
+            <Text style={styles.managePlacesText}>Сообщения</Text>
+            <Ionicons name="chevron-forward" size={18} color={palette.olive} />
+          </TouchableOpacity>
+        )}
         {!isCompany && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/plans')} style={styles.managePlaces}>
           <Ionicons name="calendar-outline" size={20} color="#606C38" /><Text style={styles.managePlacesText}>Планы и приглашения</Text><Ionicons name="chevron-forward" size={18} color="#606C38" />
         </TouchableOpacity>}
@@ -593,6 +612,10 @@ const baseStyles = StyleSheet.create({
     color: '#6F7457',
     textAlign: 'center',
   },
+  friendsStat: { borderRadius: 14, backgroundColor: '#F0ECCD', minHeight: 48 },
+  statLink: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 3 },
+  statLinkLabel: { color: palette.olive, fontSize: 12, fontWeight: '600' },
+  messagesLink: { minHeight: 48, paddingHorizontal: 12, backgroundColor: '#F0ECCD', borderRadius: 14 },
   subStatNote: {
     fontSize: 12,
     color: '#6F7457',

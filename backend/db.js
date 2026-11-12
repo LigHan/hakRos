@@ -44,6 +44,19 @@ const schema = `
     FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS place_pricing (
+    post_id TEXT PRIMARY KEY,
+    entry_type TEXT NOT NULL CHECK (entry_type IN ('unknown','free','paid')),
+    entry_price REAL,
+    spend_min REAL,
+    spend_max REAL,
+    source TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE
+  );
+  CREATE TRIGGER IF NOT EXISTS remove_deleted_post_pricing
+    AFTER DELETE ON posts BEGIN DELETE FROM place_pricing WHERE post_id = OLD.id; END;
+
   CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id TEXT NOT NULL,

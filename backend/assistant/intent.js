@@ -14,7 +14,7 @@ const screens = {
 const intentSchema = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat'] },
+    intent: { type: 'string', enum: ['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat', 'clarify', 'home', 'address', 'compare', 'more'] },
     reply: { type: 'string', description: 'Короткий ответ без названий мест, адресов, цен, событий и неподтверждённых действий' },
     category: { type: 'string', enum: ['', ...categories] },
     interests: { type: 'array', items: { type: 'string' } },
@@ -68,7 +68,7 @@ function evidence(text) {
 
 function validateIntent(raw, message, history) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
-      !['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat'].includes(raw.intent) ||
+      !['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat', 'clarify', 'home', 'address', 'compare', 'more'].includes(raw.intent) ||
       typeof raw.reply !== 'string' || raw.reply.length > 1000 ||
       typeof raw.category !== 'string' || !['', ...categories].includes(raw.category) ||
       !Array.isArray(raw.interests) || raw.interests.length > 8 || raw.interests.some(v => typeof v !== 'string' || v.length > 80) ||
@@ -104,6 +104,11 @@ function validateIntent(raw, message, history) {
     }
   }
   const explicit = value => value && lower.includes(value.toLocaleLowerCase('ru'));
+  let withFriends = false;
+  for (const text of userMessages) {
+    if (/без\s+(?:друзей|компании)|(?:^|[\s,.])(?:один(?:а)?|сам(?:а)?)(?:$|[\s,.!?])/iu.test(text) && !/(?:не\s+один|с\s+друг)/iu.test(text)) withFriends = false;
+    else if (/друг|друз|компани|вместе|пати/iu.test(text)) withFriends = true;
+  }
   return {
     intent: raw.intent, reply: raw.reply.trim(), category: inferredCategory || (raw.category && !rejected.has(raw.category) ? raw.category : null), excludedCategories: [...rejected],
     interests: raw.interests.map(x => x.trim()).filter(explicit), mood: explicit(raw.mood.trim()) ? raw.mood.trim() : null,
@@ -111,7 +116,7 @@ function validateIntent(raw, message, history) {
     currency: known.currency,
     durationMinutes: known.durationMinutes,
     dateText: dateText && userText.toLocaleLowerCase('ru').includes(dateText.toLocaleLowerCase('ru')) ? dateText : null,
-    withFriends: /друг|друз|компани|вместе|пати/i.test(lower),
+    withFriends,
     nearby: /рядом|поблизости|недалеко|ближайш/i.test(lower),
   };
 }

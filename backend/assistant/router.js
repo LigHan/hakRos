@@ -45,7 +45,8 @@ function createAssistantRouter(options = {}) {
         !context || typeof context !== 'object' || Array.isArray(context) ||
         (context.screen != null && (typeof context.screen !== 'string' || context.screen.length > 32)) ||
         (context.placeId != null && (typeof context.placeId !== 'string' || !/^[\w-]{1,128}$/.test(context.placeId))) ||
-        !Array.isArray(history) || history.length > 6 || history.some(item =>
+        (context.shownPlaceIds != null && (!Array.isArray(context.shownPlaceIds) || context.shownPlaceIds.length > 12 || context.shownPlaceIds.some(id => typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id)))) ||
+        !Array.isArray(history) || history.length > 20 || history.some(item =>
           !item || !['user', 'assistant'].includes(item.role) ||
           typeof item.content !== 'string' || !item.content.trim() || item.content.length > 1000)) {
       return res.status(400).json({ error: 'invalid_request', message: 'Проверьте текст и историю сообщений.' });

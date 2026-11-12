@@ -8,10 +8,11 @@ import { placeCategories } from '@/lib/place-categories';
 import { ApiError, authorized } from '@/lib/statistics';
 import { clearUserSession } from '@/lib/user-session';
 
-type Place = { id: string; place: string; bio: string | null; address: string | null; category: string | null };
+type Place = { id: string; place: string; bio: string | null; address: string | null; category: string | null; entry_type: 'unknown' | 'free' | 'paid' | null; entry_price: number | null; spend_min: number | null; spend_max: number | null; price_source: string | null; price_updated_at: string | null };
 type Account = { id: number; email: string; name: string; surname: string | null; role: 'user' | 'company' };
 type MapPoint = { id: string; name: string; latitude: number; longitude: number; postId: string | null; reviewStatus: 'pending' | 'approved'; creatorName: string | null };
 type PlaceForm = { place: string; bio: string; address: string; category: string };
+type PricingForm = { entryType: 'unknown' | 'free' | 'paid'; entryPrice: string; spendMin: string; spendMax: string; source: string };
 type AccountForm = { email: string; name: string; surname: string };
 type Metric = 'card_view' | 'search' | 'search_no_results' | 'favorite_added' | 'like_added' | 'route_requested' | 'share_initiated';
 type Stats = { role: string; counts: Record<Metric, number>; categories: { category: string; n: number }[] };
@@ -42,6 +43,9 @@ export default function AdminPage() {
   const [placeId, setPlaceId] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [placeForm, setPlaceForm] = useState<PlaceForm>({ place: '', bio: '', address: '', category: '' });
+  const [pricingForm, setPricingForm] = useState<PricingForm>({ entryType: 'unknown', entryPrice: '', spendMin: '', spendMax: '', source: '' });
+  const [linkPlaceId, setLinkPlaceId] = useState<string | null>(null);
+  const [linkPointId, setLinkPointId] = useState<string | null>(null);
   const [userForm, setUserForm] = useState<AccountForm>({ email: '', name: '', surname: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -93,6 +97,29 @@ export default function AdminPage() {
       await authorized(`/api/admin/map-places/${encodeURIComponent(id)}/review`, {method:'POST', body:JSON.stringify({decision})});
       if (await load()) setNotice(decision === 'approve' ? 'Точка опубликована' : 'Точка возвращена автору');
     } catch (e) { setNeedsLogin(e instanceof ApiError && e.status === 401); setError(e instanceof Error ? e.message : 'Не удалось проверить точку'); }
+    finally { setSaving(false); }
+  };
+  const savePricing = async () => {
+    if (saving || !placeId) return;
+    const number = (value: string) => value.trim() ? Number(value.trim().replace(',', '.')) : null;
+    const entryPrice = pricingForm.entryType === 'paid' ? number(pricingForm.entryPrice) : null;
+    const spendMin = number(pricingForm.spendMin), spendMax = number(pricingForm.spendMax);
+    if ([entryPrice, spendMin, spendMax].some(value => value !== null && (!Number.isFinite(value) || value < 0))) { setError('Укажите корректную стоимость.'); return; }
+    setSaving(true); setError(''); setNotice('');
+    try {
+      await authorized(`/api/admin/places/${encodeURIComponent(placeId)}/pricing`, { method: 'PUT', body: JSON.stringify({ entryType: pricingForm.entryType, entryPrice, spendMin, spendMax, source: pricingForm.source }) });
+      if (await load()) setNotice('Стоимость сохранена отдельно от остальных изменений карточки');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось сохранить стоимость'); }
+    finally { setSaving(false); }
+  };
+  const linkPoint = async () => {
+    if (!linkPlaceId || !linkPointId || saving) return;
+    setSaving(true); setError(''); setNotice('');
+    try {
+      await authorized(`/api/admin/map-places/${encodeURIComponent(linkPointId)}/link`, { method: 'POST', body: JSON.stringify({ postId: linkPlaceId, confirmed: true }) });
+      setLinkPlaceId(null); setLinkPointId(null);
+      if (await load()) setNotice('Точка связана с карточкой места');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось связать точку'); }
     finally { setSaving(false); }
   };
   const select = (value: Section) => { setSection(value); setQuery(''); if (stats) setError(''); setNotice(''); setPlaceId(null); setUserId(null); };
@@ -147,6 +174,13 @@ export default function AdminPage() {
                   <Text style={styles.label}>Категория</Text><View style={styles.chips}><Action label="Не указана" active={!placeForm.category} onPress={() => setPlaceForm({ ...placeForm, category: '' })} />{placeCategories.filter(c => c.id !== 'all').map(c => <Action key={c.id} label={c.name} active={placeForm.category === c.id} onPress={() => setPlaceForm({ ...placeForm, category: c.id })} />)}</View>
                   {placeForm.category && !placeCategories.some(c => c.id === placeForm.category) ? <Text style={styles.muted}>Текущая категория: {placeForm.category}</Text> : null}
                   <View style={styles.chips}><Action label={saving ? 'Сохранение…' : 'Сохранить'} active disabled={saving} onPress={() => void save()} /><Action label="Отмена" disabled={saving} onPress={() => setPlaceId(null)} /></View>
+                  <Text style={styles.label}>Стоимость входа</Text><View style={styles.chips}>{(['unknown', 'free', 'paid'] as const).map(value => <Action key={value} label={value === 'unknown' ? 'Неизвестно' : value === 'free' ? 'Бесплатно' : 'Платно'} active={pricingForm.entryType === value} onPress={() => setPricingForm({ ...pricingForm, entryType: value })} />)}</View>
+                  {pricingForm.entryType === 'paid' && <Field label="Вход, ₽" value={pricingForm.entryPrice} onChange={value => setPricingForm({ ...pricingForm, entryPrice: value })} />}
+                  <Field label="Расходы внутри от, ₽ (необязательно)" value={pricingForm.spendMin} onChange={value => setPricingForm({ ...pricingForm, spendMin: value })} />
+                  <Field label="Расходы внутри до, ₽ (необязательно)" value={pricingForm.spendMax} onChange={value => setPricingForm({ ...pricingForm, spendMax: value })} />
+                  <Field label="Источник стоимости" value={pricingForm.source} onChange={value => setPricingForm({ ...pricingForm, source: value })} />
+                  <Text style={styles.muted}>Укажите источник подтверждённых сведений; пустое поле расходов означает, что они неизвестны.</Text>
+                  <View style={styles.chips}><Action label="Сохранить стоимость" active disabled={saving} onPress={() => void savePricing()} /></View>
                 </View> : <>
                   <View style={styles.rowMain}>
                     <Text style={styles.bodyText}>{item.place}</Text>
@@ -154,7 +188,9 @@ export default function AdminPage() {
                     {!linkedPointId && <Text style={styles.muted}>Нет метки на карте</Text>}
                   </View>
                   {linkedPointId && <Action label="Показать на карте" onPress={() => router.push({ pathname: '/map', params: { focusType: 'point', focusId: linkedPointId } })} />}
-                  <Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setPlaceId(item.id); setPlaceForm({ place: item.place, bio: item.bio || '', address: item.address || '', category: item.category || '' }); }} />
+                  {!linkedPointId && <Action label="Привязать точку" onPress={() => { setLinkPlaceId(item.id); setLinkPointId(null); }} />}
+                  <Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setPlaceId(item.id); setPlaceForm({ place: item.place, bio: item.bio || '', address: item.address || '', category: item.category || '' }); setPricingForm({ entryType: item.entry_type || 'unknown', entryPrice: item.entry_price?.toString() || '', spendMin: item.spend_min?.toString() || '', spendMax: item.spend_max?.toString() || '', source: item.price_source || '' }); }} />
+                  {linkPlaceId === item.id && <View style={styles.form}><Text style={styles.muted}>Выберите опубликованную точку и проверьте координаты перед привязкой.</Text>{mapPlaces.filter(point => point.reviewStatus === 'approved' && !point.postId).map(point => <Action key={point.id} label={`${point.name} · ${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`} active={point.id === linkPointId} onPress={() => setLinkPointId(point.id)} />)}<View style={styles.chips}><Action label="Подтвердить привязку" active disabled={!linkPointId || saving} onPress={() => void linkPoint()} /><Action label="Отмена" onPress={() => { setLinkPlaceId(null); setLinkPointId(null); }} /></View></View>}
                 </>}
               </View>
             );

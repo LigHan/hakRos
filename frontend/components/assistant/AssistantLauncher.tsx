@@ -10,8 +10,18 @@ import { API_URL } from '@/lib/statistics';
 import { getUserSession } from '@/lib/user-session';
 import { triggerMapRoute } from '@/lib/map-search';
 
-type PlaceCard = { placeId: string; name: string; address: string; image: string | null; description: string; reason: string; price: number | null; durationMinutes: number | null; actions: string[] };
-type ChatMessage = { role: 'user' | 'assistant'; content: string; cards?: PlaceCard[]; durationMinutes?: number | null };
+type PlaceCard = { placeId: string; name: string; address: string; image: string | null; description: string; reason: string; price: number | null; pricing?: { entryType: 'unknown' | 'free' | 'paid'; entryPrice: number | null; spendMin: number | null; spendMax: number | null }; budgetMatch?: 'fits' | 'unknown'; durationMinutes: number | null; actions: string[] };
+type Preferences = { budget: number | null; currency: string | null; durationMinutes: number | null };
+type ChatMessage = { role: 'user' | 'assistant'; content: string; cards?: PlaceCard[]; durationMinutes?: number | null; preferences?: Preferences };
+
+function priceLabel(card: PlaceCard) {
+  const pricing = card.pricing;
+  if (!pricing) return 'Стоимость входа неизвестна';
+  const entry = pricing.entryType === 'unknown' ? 'Стоимость входа неизвестна' : pricing.entryType === 'free' ? 'Вход бесплатный' : `Вход: ${pricing.entryPrice} ₽`;
+  if (pricing.spendMin === null && pricing.spendMax === null) return `${entry} · расходы внутри неизвестны`;
+  if (pricing.spendMin !== null && pricing.spendMax !== null) return `${entry} · расходы внутри: ${pricing.spendMin}–${pricing.spendMax} ₽`;
+  return `${entry} · расходы внутри: ${pricing.spendMin !== null ? `от ${pricing.spendMin}` : `до ${pricing.spendMax}`} ₽`;
+}
 type Status = 'checking' | 'gigachat' | 'unavailable' | 'unauthorized';
 
 const opening: ChatMessage = {
@@ -207,7 +217,10 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
     const message = (quickMessage ?? draft).trim();
     if (!message || sendingRef.current) return;
     sendingRef.current = true;
-    const history = messages.slice(1).slice(-6).map(item => ({ role: item.role, content: item.content.slice(0, 1000) }));
+    const history = messages.slice(1).slice(-20).map(item => ({ role: item.role, content: item.content.slice(0, 1000) }));
+    const recentCards = [...messages].reverse().find(item => item.cards?.length)?.cards ?? [];
+    const preferences = [...messages].reverse().find(item => item.preferences)?.preferences;
+    const excluded = excludedCards.length ? excludedCards : /(?:предложи|покажи|хочу|давай).{0,15}(?:другое|другие|ещ[её])/iu.test(message) ? recentCards : [];
     setMessages(current => [...current, { role: 'user', content: message }]);
     setDraft('');
     setError('');
@@ -219,11 +232,11 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
       if (!session?.token) throw new Error('unauthorized');
       const placeMatch = pathname.match(/^\/(?:company|place-post)\/([\w-]+)$/);
       const screen = placeMatch ? 'place' : pathname === '/' ? 'home' : ['/search', '/map', '/profile'].includes(pathname) ? pathname.slice(1) : pathname.startsWith('/plans') ? 'plans' : 'other';
-      const context = { screen, ...(placeMatch ? { placeId: placeMatch[1] } : {}) };
+      const context = { screen, ...(placeMatch ? { placeId: placeMatch[1] } : {}), shownPlaceIds: recentCards.map(card => card.placeId).slice(0, 12), ...(preferences ? { preferences } : {}) };
       const response = await fetch(`${API_URL}/api/assistant/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
-        body: JSON.stringify({ message, history, context, excludePlaceIds: excludedCards.map(card => card.placeId) }),
+        body: JSON.stringify({ message, history, context, excludePlaceIds: excluded.map(card => card.placeId) }),
         signal: controller.signal,
       });
       if (response.status === 401) throw new Error('unauthorized');
@@ -231,7 +244,8 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
       const data = await response.json();
       if (!response.ok || typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('unavailable');
       const cards: PlaceCard[] = Array.isArray(data.cards) ? data.cards.filter((item: PlaceCard) => item && typeof item.placeId === 'string' && typeof item.name === 'string' && Array.isArray(item.actions)) : [];
-      setMessages(current => [...current, { role: 'assistant', content: data.reply, cards, durationMinutes: data.parameters?.durationMinutes ?? null }]);
+      const nextPreferences = data.parameters ? { budget: data.parameters.budget ?? null, currency: data.parameters.currency ?? null, durationMinutes: data.parameters.durationMinutes ?? null } : undefined;
+      setMessages(current => [...current, { role: 'assistant', content: data.reply, cards, durationMinutes: data.parameters?.durationMinutes ?? null, preferences: nextPreferences }]);
       if (data.mode === 'gigachat') setStatus(data.mode);
       if (typeof data.catalogAvailable === 'boolean') setCatalogAvailable(data.catalogAvailable);
     } catch (failure) {
@@ -303,7 +317,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
 
               <ScrollView ref={listRef} contentContainerStyle={styles.messages} onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })} keyboardShouldPersistTaps="handled">
                 {catalogAvailable === false && <Text style={styles.notice}>Каталог мест сейчас недоступен, поэтому помощник не сможет предложить конкретные места.</Text>}
-                {catalogAvailable === true && <Text style={styles.notice}>Помощник пока не проверяет стоимость, время работы и длительность посещения — уточните их перед визитом.</Text>}
+                {catalogAvailable === true && <Text style={styles.notice}>Стоимость показываем по данным каталога; неизвестные расходы, часы работы и длительность уточняйте перед визитом.</Text>}
                 {messages.map((item, index) => (
                   <View key={`${item.role}-${index}`} style={styles.messageGroup}>
                     <View style={[styles.bubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
@@ -316,7 +330,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
                         {!!card.address && <Text style={styles.placeMeta}>{card.address}</Text>}
                         {!!card.description && <Text numberOfLines={3} style={styles.placeMeta}>{card.description}</Text>}
                         <Text style={styles.placeMeta}>{card.reason}</Text>
-                        <Text style={styles.placeMeta}>{card.price === null ? 'Стоимость не указана' : `${card.price} ₽`} · {card.durationMinutes === null ? 'Длительность не указана' : `${card.durationMinutes} мин`}</Text>
+                          <Text style={styles.placeMeta}>{priceLabel(card)}{card.budgetMatch === 'fits' ? ' · В пределах бюджета' : ''} · {card.durationMinutes === null ? 'Длительность не указана' : `${card.durationMinutes} мин`}</Text>
                         <View style={styles.placeActions}>
                           {card.actions.includes('open_place') && <Pressable accessibilityRole="button" onPress={() => { setOpen(false); router.push({ pathname: '/company/[id]', params: { id: card.placeId } }); }} style={styles.quickButton}><Text style={styles.quickText}>Открыть место</Text></Pressable>}
                           {card.actions.includes('route') && <Pressable accessibilityRole="button" onPress={() => { setOpen(false); router.push('/map'); triggerMapRoute(card.address || card.name, card.placeId); }} style={styles.quickButton}><Text style={styles.quickText}>Маршрут</Text></Pressable>}

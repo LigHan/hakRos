@@ -424,6 +424,13 @@ function PlaceDetails({ id }: { id?: string }) {
             </View>
           )}
 
+          <View style={styles.section}>
+            <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>Стоимость</ThemedText>
+            <Text style={styles.hoursLabel}>{!post.pricing || post.pricing.entryType === 'unknown' ? 'Вход: неизвестно' : post.pricing.entryType === 'free' ? 'Вход бесплатный' : `Вход: ${post.pricing.entryPrice} ₽`}</Text>
+            <Text style={styles.hoursLabel}>{post.pricing?.spendMin == null && post.pricing?.spendMax == null ? 'Расходы внутри неизвестны' : `Расходы внутри: ${post.pricing?.spendMin != null ? `от ${post.pricing.spendMin} ₽ ` : ''}${post.pricing?.spendMax != null ? `до ${post.pricing.spendMax} ₽` : ''}`}</Text>
+            {!!post.pricing?.source && <Text style={styles.hoursLabel}>Источник: {post.pricing.source} · обновлено {new Date(post.pricing.updatedAt).toLocaleDateString('ru-RU')}</Text>}
+          </View>
+
           {/* Время работы */}
           {workingHours.length > 0 && (
             <View style={styles.section}>

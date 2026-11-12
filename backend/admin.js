@@ -16,7 +16,27 @@ module.exports = function createAdminRouter(db, auth) {
   });
 
   router.get('/places', async (_req, res) => {
-    res.json(await all('SELECT id, place, bio, address, category FROM posts ORDER BY place'));
+    res.json(await all(`SELECT p.id, p.place, p.bio, p.address, p.category,
+      pr.entry_type, pr.entry_price, pr.spend_min, pr.spend_max, pr.source AS price_source, pr.updated_at AS price_updated_at
+      FROM posts p LEFT JOIN place_pricing pr ON pr.post_id=p.id ORDER BY p.place`));
+  });
+
+  router.put('/places/:id/pricing', async (req, res) => {
+    const { entryType, entryPrice, spendMin, spendMax, source } = req.body || {};
+    const valid = n => n === null || (typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 10000000);
+    if (!['unknown', 'free', 'paid'].includes(entryType) || ![entryPrice, spendMin, spendMax].every(valid) ||
+        (entryType === 'paid' ? !(entryPrice > 0) : entryPrice !== null) ||
+        (spendMin !== null && spendMax !== null && spendMin > spendMax) ||
+        typeof source !== 'string' || source.trim().length > 300 ||
+        ((entryType !== 'unknown' || spendMin !== null || spendMax !== null) && !source.trim())) {
+      return res.status(400).json({ error: 'Проверь стоимость и укажи источник сведений.' });
+    }
+    if (!await get('SELECT id FROM posts WHERE id = ?', [req.params.id])) return res.status(404).json({ error: 'Место не найдено' });
+    await run(`INSERT INTO place_pricing(post_id,entry_type,entry_price,spend_min,spend_max,source,updated_at)
+      VALUES(?,?,?,?,?,?,?) ON CONFLICT(post_id) DO UPDATE SET entry_type=excluded.entry_type, entry_price=excluded.entry_price,
+      spend_min=excluded.spend_min, spend_max=excluded.spend_max, source=excluded.source, updated_at=excluded.updated_at`,
+      [req.params.id, entryType, entryPrice, spendMin, spendMax, source.trim(), new Date().toISOString()]);
+    res.json({ ok: true });
   });
 
   router.get('/map-places', async (_req, res) => {
@@ -31,6 +51,25 @@ module.exports = function createAdminRouter(db, auth) {
     const changed = await run("UPDATE map_places SET review_status=? WHERE id=? AND review_status='pending'", [decision === 'approve' ? 'approved' : 'private', req.params.id]);
     if (!changed) return res.status(409).json({error:'Точка не ожидает проверки'});
     res.json({ok:true});
+  });
+
+  router.post('/map-places/:id/link', async (req, res) => {
+    const postId = req.body?.postId;
+    if (typeof postId !== 'string' || !postId || postId.length > 128 || req.body?.confirmed !== true) return res.status(400).json({ error: 'Выберите место и подтвердите привязку.' });
+    if (!await get('SELECT id FROM posts WHERE id=?', [postId])) return res.status(404).json({ error: 'Место не найдено.' });
+    const point = await get('SELECT post_id, review_status FROM map_places WHERE id=?', [req.params.id]);
+    if (!point || point.review_status !== 'approved') return res.status(404).json({ error: 'Опубликованная точка не найдена.' });
+    if (point.post_id && point.post_id !== postId) return res.status(409).json({ error: 'Точка уже связана с другим местом.' });
+    const existing = await get('SELECT id FROM map_places WHERE post_id=?', [postId]);
+    if (existing && existing.id !== req.params.id) return res.status(409).json({ error: 'У места уже есть связанная точка.' });
+    try {
+      const changed = await run("UPDATE map_places SET post_id=? WHERE id=? AND review_status='approved' AND (post_id IS NULL OR post_id=?)", [postId, req.params.id, postId]);
+      if (!changed) return res.status(409).json({ error: 'Точка изменилась. Обновите список.' });
+      res.json({ ok: true });
+    } catch (error) {
+      if (error.code === 'SQLITE_CONSTRAINT') return res.status(409).json({ error: 'У места уже есть связанная точка.' });
+      throw error;
+    }
   });
 
   router.put('/places/:id', async (req, res) => {
@@ -56,7 +95,7 @@ module.exports = function createAdminRouter(db, auth) {
     if (!await get('SELECT id FROM posts WHERE id = ?', [id])) return res.status(404).json({ error: 'Место не найдено' });
     // В SQL попадают только шестнадцатеричные байты идентификатора, а не текст запроса.
     const value = `CAST(X'${Buffer.from(id, 'utf8').toString('hex')}' AS TEXT)`;
-    const statements = ['gallery', 'tags', 'working_hours', 'reviews', 'contact_info', 'stories'].map(table => `DELETE FROM ${table} WHERE post_id = ${value};`);
+    const statements = ['gallery', 'tags', 'working_hours', 'reviews', 'contact_info', 'stories', 'place_pricing'].map(table => `DELETE FROM ${table} WHERE post_id = ${value};`);
     statements.push(`DELETE FROM map_places WHERE post_id = ${value};`);
     // Связь владельца сохраняется для подсчёта прежних событий компании за период статистики.
     statements.push(`DELETE FROM posts WHERE id = ${value};`);

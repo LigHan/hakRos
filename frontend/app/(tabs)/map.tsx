@@ -217,16 +217,24 @@ export default function MapScreen() {
     searchRequest.current = request;
     const normalize = (value: string) => value.toLowerCase().replace(/ё/g, 'е');
     const needle = normalize(text);
-    const local = places.filter(point => normalize(point.name).includes(needle)).slice(0, 5).map(placeSearchResult);
+    let local = places.filter(point => normalize(point.name).includes(needle)).slice(0, 5).map(placeSearchResult);
+    if (postId && !local.length) {
+      try {
+        const post = await api(`/api/posts/${encodeURIComponent(postId)}`);
+        if (request.signal.aborted) return;
+        const placeName = typeof post.place === 'string' ? normalize(post.place.trim()) : '';
+        if (placeName) local = places.filter(point => normalize(point.name.trim()) === placeName).slice(0, 5).map(placeSearchResult);
+      } catch { /* Address search remains available if the card could not be loaded. */ }
+    }
     setSearchState({ results: local, pending: true, planOnSelect });
 
     try {
       const addresses = await findAddresses(text, request.signal);
       if (request.signal.aborted) return;
       const results = [...local, ...addresses];
-      if (fromCard && results.length === 1) showDestination(results[0], planOnSelect);
+      if (fromCard && results.length === 1 && !local.length) showDestination(results[0], planOnSelect);
       else setSearchState({ results, pending: false, planOnSelect,
-        message: results.length ? undefined : 'Адрес или место не найдено. Уточните запрос.' });
+        message: local.length && postId ? 'Выберите точку и проверьте её на карте: она ещё не связана с карточкой.' : results.length ? undefined : 'Адрес или место не найдено. Уточните запрос.' });
     } catch (cause) {
       if (!request.signal.aborted) {
         const message = cause instanceof ApiError ? cause.message : 'Не удалось найти адрес. Проверьте соединение и повторите поиск.';

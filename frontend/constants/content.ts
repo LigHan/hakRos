@@ -45,6 +45,7 @@ export type Post = {
   bio: string;
   address: string;
   category: string;
+  pricing?: { entryType: 'unknown' | 'free' | 'paid'; entryPrice: number | null; spendMin: number | null; spendMax: number | null; source: string; updatedAt: string } | null;
   workingHours: WorkingHours[];
   reviews: Review[];
   contact: ContactInfo[];

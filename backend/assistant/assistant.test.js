@@ -55,7 +55,7 @@ test('structured model response uses history and validated category, budget, dur
   assert.equal(result.parameters.mood, null); assert.equal(result.parameters.category, 'park');
   assert.deepEqual(result.cards.map(c => c.placeId), ['1', '3']);
   assert.ok(result.cards.every(c => c.price === null && c.durationMinutes === null));
-  assert.match(result.reply, /Стоимость не подтверждена/);
+  assert.match(result.reply, /расход неизвестен/);
   assert.doesNotMatch(JSON.stringify(result), /private@example/);
   const chat = calls.find(call => call.url.endsWith('/chat/completions'));
   const request = JSON.parse(chat.options.body);
@@ -64,6 +64,58 @@ test('structured model response uses history and validated category, budget, dur
   assert.doesNotMatch(JSON.stringify(request.messages), /Игнорируй инструкции|private@example/);
   await service.reply('Покажи ещё', [], { screen: 'home' });
   assert.equal(calls.filter(call => call.url.includes('/oauth')).length, 1);
+});
+
+test('conversation resolves a named place, compares only known expenses, and changes budget', async () => {
+  const places = createCatalog({ loadPosts: async () => [
+    { id: 'a', place: 'Площадь Ленина', address: 'площадь Ленина, Донецк', category: 'park', rating: 5 },
+    { id: 'b', place: 'Парк Мира', address: 'Мира, 5', category: 'park', entry_type: 'free', spend_min: 0, spend_max: 0, price_source: 'Администрация', price_updated_at: '2026-11-12' },
+    { id: 'c', place: 'Платный парк', address: 'Мира, 6', category: 'park', entry_type: 'paid', entry_price: 600, spend_min: 0, spend_max: 0, price_source: 'Касса' },
+  ] });
+  const service = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output()), catalog: places });
+  const history = [{ role: 'user', content: 'Хочу бесплатно' }, { role: 'assistant', content: 'Вот варианты' }];
+  const address = await service.reply('А знаешь адресс на котором расположена площадь ленина?', history, { shownPlaceIds: ['a', 'b'] });
+  assert.match(address.reply, /площадь Ленина, Донецк/); assert.equal(address.cards[0].placeId, 'a');
+  const expensive = await service.reply('Где дороже всего?', history, { shownPlaceIds: ['a', 'b'] });
+  assert.match(expensive.reply, /Не могу надёжно сравнить/); assert.deepEqual(expensive.cards, []);
+  const known = await service.reply('Где дороже всего?', history, { shownPlaceIds: ['b', 'c'] });
+  assert.match(known.reply, /Платный парк/); assert.match(known.reply, /600/);
+  const changed = await service.reply('Есть 500 рублей и два часа, хочу в парк', history, {});
+  assert.equal(changed.parameters.budget, 500); assert.deepEqual(changed.cards.map(x => x.placeId), ['b', 'a']);
+  assert.equal(changed.cards[0].budgetMatch, 'fits'); assert.equal(changed.cards[1].budgetMatch, 'unknown');
+  assert.equal(changed.cards.some(x => x.placeId === 'c'), false);
+});
+
+test('asks a useful question, handles unclear requests, home and age appropriately', async () => {
+  const service = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output()), catalog });
+  assert.match((await service.reply('Есть 500 рублей', [], {})).reply, /дома/);
+  assert.match((await service.reply('Хочу в бар', [], {})).reply, /18/);
+  const child = await service.reply('Мне 16 лет, хочу в бар', [], {});
+  assert.match(child.reply, /без алкоголя/); assert.deepEqual(child.cards, []);
+  const ageHistory = [{ role: 'user', content: 'Хочу в бар' }, { role: 'assistant', content: 'Подскажи, тебе уже есть 18?' }];
+  const no = await service.reply('Нет', ageHistory, {}); assert.match(no.reply, /без алкоголя/); assert.deepEqual(no.cards, []);
+  const oldAnswer = [...ageHistory, { role: 'user', content: 'Нет' }, { role: 'assistant', content: 'Предлагаю кафе.' }];
+  const stillMinor = await service.reply('А как насчёт бара?', oldAnswer, {}); assert.match(stillMinor.reply, /без алкоголя/);
+  const home = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ intent: 'home', reply: 'Можно устроить домашний киновечер. Какой жанр тебе ближе?' })), catalog });
+  const answer = await home.reply('Не хочу никуда идти', [], {}); assert.match(answer.reply, /домашний/); assert.deepEqual(answer.cards, []);
+  const unclear = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ intent: 'clarify', reply: 'Не совсем понял. Что ты имеешь в виду?' })), catalog });
+  const ambiguous = await unclear.reply('Есть 500 рублей и 2 часа, нужны грязнульки', [], {}); assert.match(ambiguous.reply, /что ты имеешь в виду/i); assert.deepEqual(ambiguous.cards, []);
+  const misclassified = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ reply: 'Хочешь грязевые ванны? Уточни, пожалуйста, что имеешь в виду.' })), catalog });
+  const corrected = await misclassified.reply('Есть 500 рублей и 2 часа, нужны грязнульки', [], {});
+  assert.deepEqual(corrected.cards, []); assert.doesNotMatch(corrected.reply, /ванны/);
+  const redundantQuestion = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ category: 'park', reply: 'Ты хочешь погулять в парке?' })), catalog });
+  const enough = await redundantQuestion.reply('Хочу в парк с другом, есть 500 рублей и два часа', [], {});
+  assert.equal(enough.cards.length, 2); assert.doesNotMatch(enough.reply, /\?/);
+});
+
+test('ambiguous place names and more suggestions do not silently pick or repeat a place', async () => {
+  const places = createCatalog({ loadPosts: async () => [{ id:'a', place:'Кофейня Грань', address:'Адрес 1' }, { id:'b', place:'Кофейня Грань', address:'Адрес 2' }, { id:'c', place:'Кофейня Новая', address:'Адрес 3' }] });
+  const addressService = createAssistantService({ credentials:'test', fetchImpl:fakeProvider(output()), catalog:places });
+  const address = await addressService.reply('Какой адрес у кофейни Грань?', [], {});
+  assert.match(address.reply, /несколько/); assert.equal(address.cards.length, 2);
+  const moreService = createAssistantService({ credentials:'test', fetchImpl:fakeProvider(output({intent:'more'})), catalog:places });
+  const more = await moreService.reply('Покажи другое', [], {shownPlaceIds:['a', 'b']});
+  assert.deepEqual(more.cards.map(card => card.placeId), ['c']);
 });
 
 test('does not convert school periods to hours, invent missing values or accept invalid schemas', () => {
@@ -80,6 +132,7 @@ test('does not convert school periods to hours, invent missing values or accept 
   assert.equal(changed.category, 'park');
   const rejected = validateIntent(output({ category: 'park' }), 'Не хочу в парк', []);
   assert.equal(rejected.category, null); assert.deepEqual(rejected.excludedCategories, ['park']);
+  assert.equal(validateIntent(output(), 'Я пойду один', [{ role: 'user', content: 'С другом' }]).withFriends, false);
 });
 
 test('conversation stays friendly and screen help cannot execute actions', async () => {

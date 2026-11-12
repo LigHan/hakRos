@@ -47,7 +47,9 @@ app.use('/api/plans', leisurePlans.router);
 app.use('/api/assistant', createAssistantRouter({
   auth: statistics.auth,
   loadPosts: () => new Promise((resolve, reject) => {
-    db.all('SELECT id, place, category, address, bio, image, rating FROM posts ORDER BY created_at DESC LIMIT 1000', (error, rows) => error ? reject(error) : resolve(rows));
+    db.all(`SELECT p.id, p.place, p.category, p.address, p.bio, p.image, p.rating,
+      pr.entry_type, pr.entry_price, pr.spend_min, pr.spend_max, pr.source AS price_source, pr.updated_at AS price_updated_at
+      FROM posts p LEFT JOIN place_pricing pr ON pr.post_id=p.id ORDER BY p.created_at DESC LIMIT 1000`, (error, rows) => error ? reject(error) : resolve(rows));
   }),
 }));
 app.use('/map-assets', express.static(path.join(__dirname, 'map-assets')));

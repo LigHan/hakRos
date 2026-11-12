@@ -15,6 +15,7 @@ media.setCanRead(social.canReadMedia);
 const path = require('node:path');
 const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
 const { createAssistantRouter } = require('./assistant/router');
+const leisurePlans = require('./leisure-plans')(db, statistics.auth);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,10 +43,11 @@ app.use('/api/company/places', companyPlaces.router);
 app.use('/api', accountProfiles.router);
 app.use('/api/media', media.router);
 app.use(express.json());
+app.use('/api/plans', leisurePlans.router);
 app.use('/api/assistant', createAssistantRouter({
   auth: statistics.auth,
   loadPosts: () => new Promise((resolve, reject) => {
-    db.all('SELECT id, place, category, address, bio FROM posts ORDER BY created_at DESC LIMIT 1000', (error, rows) => error ? reject(error) : resolve(rows));
+    db.all('SELECT id, place, category, address, bio, image, rating FROM posts ORDER BY created_at DESC LIMIT 1000', (error, rows) => error ? reject(error) : resolve(rows));
   }),
 }));
 app.use('/map-assets', express.static(path.join(__dirname, 'map-assets')));
@@ -185,6 +187,7 @@ function reportStartupError(error) {
 db.ready.then(async () => {
   await statistics.initialize();
   await connections.initialize();
+  await leisurePlans.initialize();
   await accountProfiles.initialize();
   await media.initialize();
   await social.initialize();

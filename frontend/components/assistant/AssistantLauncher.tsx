@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   ActivityIndicator, Animated, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable,
@@ -8,8 +8,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_URL } from '@/lib/statistics';
 import { getUserSession } from '@/lib/user-session';
+import { triggerMapRoute } from '@/lib/map-search';
 
-type ChatMessage = { role: 'user' | 'assistant'; content: string };
+type PlaceCard = { placeId: string; name: string; address: string; image: string | null; description: string; reason: string; price: number | null; durationMinutes: number | null; actions: string[] };
+type ChatMessage = { role: 'user' | 'assistant'; content: string; cards?: PlaceCard[]; durationMinutes?: number | null };
 type Status = 'checking' | 'gigachat' | 'unavailable' | 'unauthorized';
 
 const opening: ChatMessage = {
@@ -18,7 +20,7 @@ const opening: ChatMessage = {
 };
 const WIDGET_SIZE = 54;
 const MAX_LIFT = 110;
-const quickMessages = ['Есть пара часов', 'Подскажи, куда сходить'];
+const quickMessages = ['Есть пара часов', 'Подскажи, куда сходить', 'Есть два часа', 'Хочу бесплатно', 'Выбери сам', 'Хочу с друзьями'];
 
 function clampPosition(value: number, width: number) {
   return Math.max(0, Math.min(value, Math.max(0, width - WIDGET_SIZE)));
@@ -167,6 +169,7 @@ export function MascotIcon({ size = 42 }: { size?: number }) {
 export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<Status>('checking');
   const [messages, setMessages] = useState<ChatMessage[]>([opening]);
@@ -175,6 +178,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
   const [error, setError] = useState('');
   const [catalogAvailable, setCatalogAvailable] = useState<boolean | null>(null);
   const listRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const sendingRef = useRef(false);
   const [dock] = useState(createDockMotion);
 
   function measureDock(event: LayoutChangeEvent) {
@@ -199,29 +203,35 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
     return () => controller.abort();
   }, [open]);
 
-  async function send(quickMessage?: string) {
+  async function send(quickMessage?: string, excludedCards: PlaceCard[] = []) {
     const message = (quickMessage ?? draft).trim();
-    if (!message || sending) return;
-    const history = messages.slice(1).slice(-6).map(item => ({ ...item, content: item.content.slice(0, 1000) }));
+    if (!message || sendingRef.current) return;
+    sendingRef.current = true;
+    const history = messages.slice(1).slice(-6).map(item => ({ role: item.role, content: item.content.slice(0, 1000) }));
     setMessages(current => [...current, { role: 'user', content: message }]);
     setDraft('');
     setError('');
     setSending(true);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 35000);
+    const timeout = setTimeout(() => controller.abort(), 55000);
     try {
       const session = await getUserSession();
       if (!session?.token) throw new Error('unauthorized');
+      const placeMatch = pathname.match(/^\/(?:company|place-post)\/([\w-]+)$/);
+      const screen = placeMatch ? 'place' : pathname === '/' ? 'home' : ['/search', '/map', '/profile'].includes(pathname) ? pathname.slice(1) : pathname.startsWith('/plans') ? 'plans' : 'other';
+      const context = { screen, ...(placeMatch ? { placeId: placeMatch[1] } : {}) };
       const response = await fetch(`${API_URL}/api/assistant/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
-        body: JSON.stringify({ message, history }),
+        body: JSON.stringify({ message, history, context, excludePlaceIds: excludedCards.map(card => card.placeId) }),
         signal: controller.signal,
       });
       if (response.status === 401) throw new Error('unauthorized');
+      if (response.status === 429) throw new Error('rate_limited');
       const data = await response.json();
       if (!response.ok || typeof data.reply !== 'string' || !data.reply.trim()) throw new Error('unavailable');
-      setMessages(current => [...current, { role: 'assistant', content: data.reply }]);
+      const cards: PlaceCard[] = Array.isArray(data.cards) ? data.cards.filter((item: PlaceCard) => item && typeof item.placeId === 'string' && typeof item.name === 'string' && Array.isArray(item.actions)) : [];
+      setMessages(current => [...current, { role: 'assistant', content: data.reply, cards, durationMinutes: data.parameters?.durationMinutes ?? null }]);
       if (data.mode === 'gigachat') setStatus(data.mode);
       if (typeof data.catalogAvailable === 'boolean') setCatalogAvailable(data.catalogAvailable);
     } catch (failure) {
@@ -229,9 +239,10 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
       setDraft(message);
       const unauthorized = failure instanceof Error && failure.message === 'unauthorized';
       if (unauthorized) setStatus('unauthorized');
-      setError(unauthorized ? 'Сессия завершилась. Войдите в аккаунт снова.' : 'Не удалось связаться с помощником. Проверьте подключение и попробуйте ещё раз.');
+      setError(unauthorized ? 'Сессия завершилась. Войдите в аккаунт снова.' : failure instanceof Error && failure.message === 'rate_limited' ? 'Слишком много запросов. Подожди немного и попробуй снова.' : 'Не удалось связаться с помощником. Проверьте подключение и попробуйте ещё раз.');
     } finally {
       clearTimeout(timeout);
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -294,8 +305,26 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
                 {catalogAvailable === false && <Text style={styles.notice}>Каталог мест сейчас недоступен, поэтому помощник не сможет предложить конкретные места.</Text>}
                 {catalogAvailable === true && <Text style={styles.notice}>Помощник пока не проверяет стоимость, время работы и длительность посещения — уточните их перед визитом.</Text>}
                 {messages.map((item, index) => (
-                  <View key={`${item.role}-${index}`} style={[styles.bubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
-                    <Text style={[styles.bubbleText, item.role === 'user' && styles.userText]}>{item.content}</Text>
+                  <View key={`${item.role}-${index}`} style={styles.messageGroup}>
+                    <View style={[styles.bubble, item.role === 'user' ? styles.userBubble : styles.assistantBubble]}>
+                      <Text style={[styles.bubbleText, item.role === 'user' && styles.userText]}>{item.content}</Text>
+                    </View>
+                    {item.cards?.map(card => (
+                      <View key={card.placeId} style={styles.placeCard}>
+                        {card.image && <Image source={{ uri: card.image.startsWith('/') ? `${API_URL}${card.image}` : card.image }} style={styles.placeImage} />}
+                        <Text style={styles.placeTitle}>{card.name}</Text>
+                        {!!card.address && <Text style={styles.placeMeta}>{card.address}</Text>}
+                        {!!card.description && <Text numberOfLines={3} style={styles.placeMeta}>{card.description}</Text>}
+                        <Text style={styles.placeMeta}>{card.reason}</Text>
+                        <Text style={styles.placeMeta}>{card.price === null ? 'Стоимость не указана' : `${card.price} ₽`} · {card.durationMinutes === null ? 'Длительность не указана' : `${card.durationMinutes} мин`}</Text>
+                        <View style={styles.placeActions}>
+                          {card.actions.includes('open_place') && <Pressable accessibilityRole="button" onPress={() => { setOpen(false); router.push({ pathname: '/company/[id]', params: { id: card.placeId } }); }} style={styles.quickButton}><Text style={styles.quickText}>Открыть место</Text></Pressable>}
+                          {card.actions.includes('route') && <Pressable accessibilityRole="button" onPress={() => { setOpen(false); router.push('/map'); triggerMapRoute(card.address || card.name, card.placeId); }} style={styles.quickButton}><Text style={styles.quickText}>Маршрут</Text></Pressable>}
+                          {card.actions.includes('create_plan') && <Pressable accessibilityRole="button" onPress={() => { setOpen(false); router.push({ pathname: '/plans/create', params: { placeId: card.placeId, ...(item.durationMinutes ? { duration: String(item.durationMinutes) } : {}) } }); }} style={styles.quickButton}><Text style={styles.quickText}>Составить план</Text></Pressable>}
+                        </View>
+                      </View>
+                    ))}
+                    {!!item.cards?.length && <Pressable accessibilityRole="button" disabled={sending} onPress={() => void send('Предложи другое', item.cards)} style={styles.quickButton}><Text style={styles.quickText}>Предложи другое</Text></Pressable>}
                   </View>
                 ))}
                 {messages.length === 1 && !sending && (
@@ -357,6 +386,12 @@ const styles = StyleSheet.create({
   messages: { padding: 18, gap: 12, flexGrow: 1 },
   notice: { color: '#7c6a3d', backgroundColor: '#f6edcf', borderRadius: 12, padding: 11, lineHeight: 17, fontSize: 12 },
   bubble: { paddingHorizontal: 15, paddingVertical: 12, borderRadius: 18, maxWidth: '88%' },
+  messageGroup: { gap: 8 },
+  placeCard: { padding: 12, borderRadius: 18, borderWidth: 1, borderColor: '#e3e7d8', backgroundColor: '#fffdf4', gap: 7 },
+  placeImage: { width: '100%', height: 105, borderRadius: 12, backgroundColor: '#edf0e1' },
+  placeTitle: { fontSize: 15, color: '#27321e', fontWeight: '800' },
+  placeMeta: { fontSize: 12, color: '#69745b', lineHeight: 17 },
+  placeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   assistantBubble: { alignSelf: 'flex-start', backgroundColor: '#e9eddd', borderBottomLeftRadius: 5 },
   userBubble: { alignSelf: 'flex-end', backgroundColor: '#64713d', borderBottomRightRadius: 5 },
   bubbleText: { color: '#293321', fontSize: 14, lineHeight: 21 },

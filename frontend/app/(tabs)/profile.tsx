@@ -298,6 +298,9 @@ export default function ProfileScreen() {
           {isCompany && companyRecentLikes > 0 && <Text style={styles.subStatNote}>{`+${formatNumber(companyRecentLikes)} лайков на последних постах`}</Text>}
         </View>
 
+        {!isCompany && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/plans')} style={styles.managePlaces}>
+          <Ionicons name="calendar-outline" size={20} color="#606C38" /><Text style={styles.managePlacesText}>Планы и приглашения</Text><Ionicons name="chevron-forward" size={18} color="#606C38" />
+        </TouchableOpacity>}
 
         {isCompany ? (
           <>

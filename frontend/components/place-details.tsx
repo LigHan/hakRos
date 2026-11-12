@@ -351,6 +351,11 @@ function PlaceDetails({ id }: { id?: string }) {
               <Text style={styles.actionText}>Маршрут</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Составить план" style={styles.actionButton} onPress={() => { if (post) void requireAuth(async () => { router.push({ pathname: '/plans/create', params: { placeId: post.id } }); }); }}>
+              <Ionicons name="calendar-outline" size={24} color="#283618" />
+              <Text style={styles.actionText}>Составить план</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.actionButton} onPress={sharePlace}>
               <Ionicons name="share-outline" size={24} color="#283618" />
               <Text style={styles.actionText}>Поделиться</Text>

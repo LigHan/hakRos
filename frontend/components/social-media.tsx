@@ -1,11 +1,12 @@
 import { useEvent, useEventListener } from 'expo';
 import { useFocusEffect } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, useWindowDimensions, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 
 import { palette } from '@/lib/app-appearance';
 import { API_URL } from '@/lib/statistics';
+import { clampMediaWidth, videoFrameHeight } from '@/lib/media-layout';
 
 type MediaProps = {
   uri: string;
@@ -28,15 +29,29 @@ export function SocialMedia(props: MediaProps) {
 
 function ImageMedia({ uri, style, story, onRetry, onFailure }: MediaProps) {
   const [failed, setFailed] = useState(false);
-  return <View style={[styles.frame, story && styles.storyFrame, style]}>
-    <Image source={{ uri }} style={styles.image} resizeMode={story ? 'cover' : 'contain'} accessibilityLabel="Изображение публикации" onError={() => { setFailed(true); onFailure?.(); }} />
+  const [ratio, setRatio] = useState<number | null>(null);
+  const [width, setWidth] = useState(0);
+  const { height: windowHeight } = useWindowDimensions();
+  useEffect(() => {
+    let active = true;
+    Image.getSize(uri, (imageWidth, imageHeight) => {
+      if (active && imageWidth > 0 && imageHeight > 0) setRatio(imageWidth / imageHeight);
+    }, () => {});
+    return () => { active = false; };
+  }, [uri]);
+  const measure = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
+  const height = ratio && width ? Math.min(width / ratio, windowHeight * 0.8) : undefined;
+  return <View onLayout={measure} style={[styles.frame, style, story && styles.storyFrame, !story && height ? { aspectRatio: undefined, height } : null]}>
+    <Image source={{ uri }} style={styles.image} resizeMode={story ? 'contain' : 'cover'} accessibilityLabel="Изображение публикации"
+      onError={() => { setFailed(true); onFailure?.(); }} />
     {failed && <View style={styles.error}><Text style={styles.errorText}>Не удалось открыть изображение.</Text>{onRetry && <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retry}><Text style={styles.retryText}>Обновить изображение</Text></Pressable>}</View>}
   </View>;
 }
 
 function VideoMedia({ uri, style, active = true, story = false, muted = false, onRetry, onFailure, onProgress, onEnd }: MediaProps) {
-  const { height: windowHeight } = useWindowDimensions();
-  const [containerWidth, setContainerWidth] = useState(0);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const container = useRef<ComponentRef<typeof View>>(null);
+  const [bounds, setBounds] = useState({ width: 0, height: 0 });
   const [ratio, setRatio] = useState(16 / 9);
   const player = useVideoPlayer(uri, instance => { instance.loop = false; instance.muted = muted; instance.timeUpdateEventInterval = 0.1; });
   const { status } = useEvent(player, 'statusChange', { status: player.status });
@@ -52,9 +67,9 @@ function VideoMedia({ uri, style, active = true, story = false, muted = false, o
   });
   useEventListener(player, 'playToEnd', () => { if (story) onEnd?.(); });
   useEffect(() => {
-    if (story && active) player.play();
+    if (story && active && bounds.width > 0) player.play();
     else if (!active) player.pause();
-  }, [active, player, story]);
+  }, [active, bounds.width, player, story]);
   useEffect(() => {
     // expo-video exposes playback settings as mutable player properties.
     // eslint-disable-next-line react-hooks/immutability
@@ -71,10 +86,17 @@ function VideoMedia({ uri, style, active = true, story = false, muted = false, o
   useFocusEffect(useCallback(() => () => {
     try { player.pause(); } catch { /* Player may already be released. */ }
   }, [player]));
-  const measure = (event: LayoutChangeEvent) => setContainerWidth(event.nativeEvent.layout.width);
-  const videoHeight = containerWidth ? Math.min(containerWidth / Math.max(0.1, ratio), windowHeight * 0.62) : undefined;
-  return <View onLayout={measure} style={[styles.frame, !story && videoHeight ? { aspectRatio: undefined, height: videoHeight } : null, story && styles.storyFrame, style]}>
-    <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} nativeControls={!story} contentFit={story ? 'cover' : 'contain'} surfaceType="textureView" accessibilityLabel={story ? 'Видео истории' : 'Видео публикации'} />
+  const measure = (event: LayoutChangeEvent) => {
+    const measured = event.nativeEvent.layout;
+    container.current?.measureInWindow((x, _y, actualWidth, actualHeight) => {
+      const width = clampMediaWidth(actualWidth || measured.width, x, windowWidth);
+      const height = actualHeight || measured.height;
+      if (width > 0 && height > 0) setBounds(current => Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5 ? current : { width, height });
+    });
+  };
+  const videoHeight = videoFrameHeight(bounds.width || windowWidth, ratio, windowHeight);
+  return <View ref={container} onLayout={measure} style={[styles.frame, style, story ? styles.storyFrame : { aspectRatio: undefined, width: '100%', maxWidth: '100%', height: videoHeight }]}>
+    {bounds.width > 0 && bounds.height > 0 && <VideoView player={player} style={{ width: bounds.width, height: bounds.height }} nativeControls={!story} contentFit="contain" surfaceType="textureView" accessibilityLabel={story ? 'Видео истории' : 'Видео публикации'} />}
     {loading && !failed && <View pointerEvents="none" style={styles.loading}><ActivityIndicator color={palette.cream} /></View>}
     {failed && <View style={styles.error}><Text style={styles.errorText}>Не удалось открыть видео. Проверьте подключение и обновите публикацию.</Text>{onRetry && <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retry}><Text style={styles.retryText}>Обновить видео</Text></Pressable>}</View>}
   </View>;

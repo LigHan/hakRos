@@ -77,9 +77,9 @@ export function SocialPostDetail({ id, embedded = false, onClose }: { id: string
   </View>;
 }
 const baseStyles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: palette.cream }, loading: { marginTop: 45 }, content: { padding: 18, paddingBottom: 145, gap: 15 },
+  page: { flex: 1, width: '100%', minWidth: 0, overflow: 'hidden', backgroundColor: palette.cream }, loading: { marginTop: 45 }, content: { width: '100%', maxWidth: '100%', padding: 18, paddingBottom: 145, gap: 15 },
   embeddedContent: { paddingBottom: 30 },
-  card: { position: 'relative', padding: 18, backgroundColor: palette.surface, borderRadius: 22, gap: 12 },
+  card: { position: 'relative', width: '100%', maxWidth: '100%', minWidth: 0, padding: 18, backgroundColor: palette.surface, borderRadius: 22, gap: 12 },
   title: { fontSize: 25, lineHeight: 34, fontWeight: '800', color: palette.forest }, heading: { fontSize: 21, lineHeight: 29, color: palette.forest, fontWeight: '700' },
   date: { fontSize: 13, lineHeight: 19, color: palette.muted }, body: { fontSize: 16, lineHeight: 24, color: palette.forest }, media: { width: '100%', maxHeight: 460, borderRadius: 14 },
   quote: { backgroundColor: palette.cream, borderRadius: 16, padding: 12, gap: 8 }, author: { fontSize: 14, color: palette.forest, fontWeight: '700' },

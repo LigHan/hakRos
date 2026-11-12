@@ -9,3 +9,9 @@ export function videoFrameHeight(width: number, aspect: number, windowHeight: nu
   if (![width, aspect, windowHeight].every(Number.isFinite) || width <= 0 || aspect <= 0 || windowHeight <= 0) return 0;
   return Math.min(width / aspect, windowHeight * 0.62);
 }
+
+/** Fit a post image to its measured width while limiting very tall cards. */
+export function imageFrameHeight(width: number, aspect: number, maxHeight: number): number {
+  if (![width, aspect, maxHeight].every(Number.isFinite) || width <= 0 || aspect <= 0 || maxHeight <= 0) return 0;
+  return Math.min(width / aspect, maxHeight);
+}

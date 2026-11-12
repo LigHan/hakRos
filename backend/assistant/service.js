@@ -23,7 +23,9 @@ class AssistantError extends Error {
   }
 }
 
-function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaChat-2-Max', fetchImpl = fetch, catalog } = {}) {
+const gigachatScopes = new Set(['GIGACHAT_API_PERS', 'GIGACHAT_API_B2B', 'GIGACHAT_API_CORP']);
+
+function createAssistantService({ mode = 'gigachat', credentials, scope = 'GIGACHAT_API_PERS', model = 'GigaChat-2-Max', fetchImpl = fetch, catalog } = {}) {
   let cachedToken;
   let expiresAt = 0;
   let tokenPromise;
@@ -40,7 +42,7 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
           Accept: 'application/json',
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: new URLSearchParams({ scope: 'GIGACHAT_API_PERS' }).toString(),
+        body: new URLSearchParams({ scope }).toString(),
         signal: AbortSignal.timeout(20000),
       });
       if (!response.ok) throw new AssistantError('provider_unavailable');
@@ -66,7 +68,7 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
       if (compare || individualPrice || address || details || more || accountDeletionQuestion(message)) {
         parsed = { intent: compare ? 'compare' : individualPrice ? 'price' : address ? 'address' : details ? 'place' : more ? 'more' : 'help', reply: '', category: '', interests: [], mood: '', budget: -1, durationMinutes: -1, dateText: '', withFriends: false, nearby: false };
       } else {
-        if (mode !== 'gigachat' || !credentials) throw new AssistantError('not_configured');
+        if (mode !== 'gigachat' || !credentials || !gigachatScopes.has(scope)) throw new AssistantError('not_configured');
         const token = await getToken();
         const requestBody = JSON.stringify({
           model,
@@ -222,7 +224,7 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
     }
   }
 
-  return { reply, mode, configured: mode === 'gigachat' && Boolean(credentials) };
+  return { reply, mode, configured: mode === 'gigachat' && Boolean(credentials) && gigachatScopes.has(scope) };
 }
 
 module.exports = { AssistantError, createAssistantService, urgentReply };

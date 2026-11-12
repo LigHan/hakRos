@@ -6,7 +6,7 @@ import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, useWin
 
 import { palette } from '@/lib/app-appearance';
 import { API_URL } from '@/lib/statistics';
-import { clampMediaWidth, videoFrameHeight } from '@/lib/media-layout';
+import { clampMediaWidth, imageFrameHeight, videoFrameHeight } from '@/lib/media-layout';
 
 type MediaProps = {
   uri: string;
@@ -31,7 +31,8 @@ function ImageMedia({ uri, style, story, onRetry, onFailure }: MediaProps) {
   const [failed, setFailed] = useState(false);
   const [ratio, setRatio] = useState<number | null>(null);
   const [width, setWidth] = useState(0);
-  const { height: windowHeight } = useWindowDimensions();
+  const frame = useRef<ComponentRef<typeof View>>(null);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   useEffect(() => {
     let active = true;
     Image.getSize(uri, (imageWidth, imageHeight) => {
@@ -39,10 +40,19 @@ function ImageMedia({ uri, style, story, onRetry, onFailure }: MediaProps) {
     }, () => {});
     return () => { active = false; };
   }, [uri]);
-  const measure = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
-  const height = ratio && width ? Math.min(width / ratio, windowHeight * 0.8) : undefined;
-  return <View onLayout={measure} style={[styles.frame, style, story && styles.storyFrame, !story && height ? { aspectRatio: undefined, height } : null]}>
-    <Image source={{ uri }} style={styles.image} resizeMode={story ? 'contain' : 'cover'} accessibilityLabel="Изображение публикации"
+  const measure = (event: LayoutChangeEvent) => {
+    const layoutWidth = event.nativeEvent.layout.width;
+    if (story || Platform.OS === 'web') { setWidth(layoutWidth); return; }
+    frame.current?.measureInWindow((x, _y, measuredWidth) => {
+      const next = clampMediaWidth(measuredWidth || layoutWidth, x, windowWidth);
+      if (next > 0) setWidth(current => Math.abs(current - next) < 0.5 ? current : next);
+    });
+  };
+  const styleHeightLimit = StyleSheet.flatten(style)?.maxHeight;
+  const maxHeight = Platform.OS === 'web' ? windowHeight * 0.8 : Math.min(windowHeight * 0.55, typeof styleHeightLimit === 'number' ? styleHeightLimit : 330);
+  const height = ratio && width ? imageFrameHeight(width, ratio, maxHeight) : Math.min(220, maxHeight);
+  return <View ref={frame} onLayout={measure} style={[styles.frame, style, story ? styles.storyFrame : { aspectRatio: undefined, width: '100%', maxWidth: '100%', minWidth: 0, height }]}>
+    <Image source={{ uri }} style={story ? styles.image : [styles.absoluteImage, width > 0 ? { width, height } : { width: '100%', height: '100%' }]} resizeMode={story ? 'contain' : 'cover'} accessibilityLabel="Изображение публикации"
       onError={() => { setFailed(true); onFailure?.(); }} />
     {failed && <View style={styles.error}><Text style={styles.errorText}>Не удалось открыть изображение.</Text>{onRetry && <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retry}><Text style={styles.retryText}>Обновить изображение</Text></Pressable>}</View>}
   </View>;
@@ -106,6 +116,7 @@ const styles = StyleSheet.create({
   frame: { width: '100%', aspectRatio: 16 / 9, borderRadius: 14, overflow: 'hidden', backgroundColor: '#20251C' },
   storyFrame: { ...StyleSheet.absoluteFill, width: '100%', height: '100%', aspectRatio: undefined, borderRadius: 0 },
   image: { width: '100%', height: '100%' },
+  absoluteImage: { position: 'absolute', top: 0, left: 0 },
   loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   error: { ...StyleSheet.absoluteFill, padding: 20, gap: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#20251C' },
   errorText: { color: palette.cream, textAlign: 'center', fontSize: 14, lineHeight: 21 },

@@ -31,6 +31,17 @@ async function withServer(service, run, auth = (req, _res, next) => { req.accoun
 }
 const post = (base, body, headers = {}) => fetch(`${base}/chat`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
+test('passes the configured GigaChat scope to authorization and rejects unsupported scopes', async () => {
+  const calls = [];
+  const service = createAssistantService({ credentials: 'secret', scope: 'GIGACHAT_API_B2B', fetchImpl: fakeProvider(output(), calls), catalog });
+  await service.reply('Привет', [], { screen: 'home' });
+  assert.equal(new URLSearchParams(calls[0].options.body).get('scope'), 'GIGACHAT_API_B2B');
+  const invalid = createAssistantService({ credentials: 'secret', scope: 'bad_scope', fetchImpl: fakeProvider(output(), calls), catalog });
+  assert.equal(invalid.configured, false);
+  await assert.rejects(invalid.reply('Привет', [], {}), error => error.code === 'not_configured');
+  assert.equal(calls.length, 2);
+});
+
 test('requires real account session and rejects invalid client input', async () => {
   assert.throws(() => createAssistantRouter({}), /authentication/);
   const stats = require('../statistics')({}); const token = stats.issue({ id: '1', role: 'user' });

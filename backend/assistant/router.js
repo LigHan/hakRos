@@ -7,6 +7,7 @@ function createAssistantRouter(options = {}) {
   const service = options.service || createAssistantService({
     mode: process.env.ASSISTANT_MODE || 'gigachat',
     credentials: process.env.GIGACHAT_AUTH_KEY?.trim(),
+    scope: process.env.GIGACHAT_SCOPE?.trim() || 'GIGACHAT_API_PERS',
     model: process.env.GIGACHAT_MODEL || 'GigaChat-2-Max',
     catalog: createCatalog({ loadPosts: options.loadPosts }),
   });

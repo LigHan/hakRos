@@ -9,6 +9,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { API_URL } from '@/lib/statistics';
 import { getUserSession } from '@/lib/user-session';
 import { triggerMapRoute } from '@/lib/map-search';
+import { webData } from '@/lib/web-data';
 
 type PlaceCard = { placeId: string; name: string; address: string; image: string | null; description: string; reason: string; price: number | null; pricing?: { entryType: 'unknown' | 'free' | 'paid'; entryPrice: number | null; spendMin: number | null; spendMax: number | null }; budgetMatch?: 'fits' | 'unknown'; durationMinutes: number | null; actions: string[] };
 type Preferences = { budget: number | null; currency: string | null; durationMinutes: number | null };
@@ -276,7 +277,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
 
   return (
     <>
-      <View pointerEvents={hidden ? 'none' : 'box-none'} accessibilityElementsHidden={hidden} importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'} onLayout={measureDock} style={[styles.dockZone, hidden && styles.hidden, { bottom: Math.max(insets.bottom, 12) + 71 }]}>
+      <View {...webData({ assistantDock: 'true' })} pointerEvents={hidden ? 'none' : 'box-none'} accessibilityElementsHidden={hidden} importantForAccessibility={hidden ? 'no-hide-descendants' : 'auto'} onLayout={measureDock} style={[styles.dockZone, hidden && styles.hidden, { bottom: Math.max(insets.bottom, 12) + 71 }]}>
         <Animated.View {...dock.panHandlers} style={[styles.draggable, Platform.OS === 'web' && ({ touchAction: 'none', cursor: 'grab' } as unknown as ViewStyle), { transform: [{ translateX: dock.position }, { translateY: dock.lift }] }]}>
           <Animated.View pointerEvents="none" style={[styles.grabHalo, { opacity: dock.held }]} />
           <Animated.View style={{ transform: [{ scale: dock.held.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }] }}>

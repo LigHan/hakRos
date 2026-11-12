@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,11 +16,13 @@ import { selectSubscribedPlaces } from '@/lib/connections-feed';
 import { getUserSession } from '@/lib/user-session';
 import { rankRecommendations } from '@/lib/recommendations';
 import { getFavoritePosts, getLikedPosts, toggleFavorite } from '@/lib/likes-favorites';
+import { usePostPreview } from '@/lib/web-post-preview';
 
 /** Recommendations use local place preferences; new users retain the server order. */
 export default function RecommendationsScreen() {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
+  const preview = usePostPreview();
   const insets = useSafeAreaInsets();
   const { mode } = useAppearance();
   const [category, setCategory] = useState('all');
@@ -72,6 +74,12 @@ export default function RecommendationsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useEffect(() => {
+    if (!preview.revision) return;
+    let active = true;
+    Promise.resolve().then(() => { if (active) void load(); });
+    return () => { active = false; };
+  }, [load, preview.revision]);
   const savePlace = async (id: string) => {
     if (savingFavorite) return;
     setSavingFavorite(id);
@@ -80,10 +88,14 @@ export default function RecommendationsScreen() {
       if (result.requiresAuth) { router.push('/login'); return; }
       if (!result.success) { Alert.alert('Не удалось сохранить место', 'Попробуйте ещё раз.'); return; }
       setFavorites(await getFavoritePosts());
+      if (preview.selected?.type === 'place' && preview.selected.id === id) preview.refresh();
     } finally { setSavingFavorite(null); }
   };
 
   const filtered = useMemo(() => rankRecommendations(places, favorites, likes).filter(place => matchesPlaceCategory(place, category)), [places, category, favorites, likes]);
+  const openPost = (id: string) => {
+    if (!preview.open({ type: 'place', id })) router.push({ pathname: '/place-post/[id]', params: { id } });
+  };
 
   return (
     <View style={styles.page}>
@@ -114,7 +126,7 @@ export default function RecommendationsScreen() {
           ListEmptyComponent={<View style={styles.state}><Ionicons name="leaf-outline" size={36} color={palette.olive} /><Text style={styles.stateText}>{places.length ? 'В этой категории пока нет мест' : 'Пока нет доступных мест'}</Text></View>}
           renderItem={({ item }) => (
             <View style={styles.post}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => router.push({ pathname: '/place-post/[id]', params: { id: item.id } })} style={styles.photoWrap}>
+              <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => openPost(item.id)} style={styles.photoWrap}>
                 <PlaceCover place={item} style={styles.photo} />
                 <LinearGradient colors={['transparent', 'rgba(20, 25, 14, 0.78)']} style={styles.photoShade} />
                 <View style={styles.photoCaption}><Ionicons name="location" size={15} color="#fff" /><Text numberOfLines={1} style={styles.photoPlace}>{item.place}</Text><Text style={styles.photoRating}>★ <Text style={styles.photoRatingValue}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text></View>
@@ -125,9 +137,10 @@ export default function RecommendationsScreen() {
               <View style={styles.cardBody}>
                 <View style={styles.cardInfo}><Text style={styles.cardTitle}>{item.place}</Text><Text numberOfLines={2} style={styles.address}>{item.bio || item.address || 'Адрес не указан'}</Text>
                   <View style={styles.tags}>{item.tags.slice(0, 2).map(tag => <Text key={tag} style={styles.tag}>{tag}</Text>)}</View></View>
-                <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => router.push({ pathname: '/place-post/[id]', params: { id: item.id } })} style={styles.cardArrow}><Ionicons name="arrow-forward" size={21} color={palette.cream} /></Pressable>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => openPost(item.id)} style={styles.cardArrow}><Ionicons name="arrow-forward" size={21} color={palette.cream} /></Pressable>
               </View>
               <SketchFrame />
+              {preview.selected?.type === 'place' && preview.selected.id === item.id && <View pointerEvents="none" style={styles.selectedShade} />}
             </View>
           )}
         />
@@ -174,6 +187,7 @@ const baseStyles = StyleSheet.create({
   nearbyLink: { flexDirection: 'row', alignSelf: 'flex-start', alignItems: 'center', gap: 6, marginTop: 10, paddingVertical: 7 },
   nearbyText: { color: palette.olive, fontSize: 14, fontWeight: '700' },
   post: { backgroundColor: palette.cream, borderRadius: 20, position: 'relative' },
+  selectedShade: { ...StyleSheet.absoluteFill, borderRadius: 20, backgroundColor: 'rgba(20, 25, 14, 0.16)' },
   photoWrap: { height: 180, borderRadius: 17, overflow: 'hidden' },
   photo: { width: '100%', height: '100%' },
   photoShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },

@@ -32,15 +32,17 @@ import {
 import { triggerMapRoute, triggerMapSearch } from '@/lib/map-search';
 import { getPlacePhotos } from '@/lib/place-photos';
 import { webData } from '@/lib/web-data';
+import { usePostPreview } from '@/lib/web-post-preview';
 
 export default function PlaceDetailsRoute() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   return <PlaceDetails key={id} id={id} />;
 }
 
-function PlaceDetails({ id }: { id?: string }) {
+export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?: boolean }) {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
+  const preview = usePostPreview();
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
   const [error, setError] = useState<string | null>(id ? null : 'Место не найдено');
@@ -107,6 +109,27 @@ function PlaceDetails({ id }: { id?: string }) {
     void loadPostData();
   }, [loadPostData]);
 
+  useEffect(() => {
+    if (!embedded || !id || !preview.revision) return;
+    let active = true;
+    Promise.all([isPostLiked(id), isPostFavorite(id)]).then(([liked, favorite]) => {
+      if (active) { setIsLiked(liked); setIsFavorite(favorite); }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [embedded, id, preview.revision]);
+
+  useEffect(() => {
+    if (!embedded || (!activePhotoKey && !isAuthModalVisible)) return;
+    const closeModalOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopImmediatePropagation();
+      if (activePhotoKey) setActivePhotoKey(null);
+      else setAuthModalVisible(false);
+    };
+    window.addEventListener('keydown', closeModalOnEscape, true);
+    return () => window.removeEventListener('keydown', closeModalOnEscape, true);
+  }, [embedded, activePhotoKey, isAuthModalVisible]);
+
   // Проверить авторизацию перед действием
   const requireAuth = async (action: () => Promise<void>): Promise<boolean> => {
     const isAuthenticated = await isUserAuthenticated();
@@ -138,6 +161,7 @@ function PlaceDetails({ id }: { id?: string }) {
         if (!result.success) {
           throw new Error('Failed to toggle like');
         }
+        if (embedded) preview.refresh();
       } catch (error) {
         console.error('❌ Ошибка при лайке:', error);
         // Откатываем изменения в случае ошибки
@@ -163,6 +187,7 @@ function PlaceDetails({ id }: { id?: string }) {
         if (!result.success) {
           throw new Error('Failed to toggle favorite');
         }
+        if (embedded) preview.refresh();
       } catch (error) {
         console.error('❌ Ошибка при избранном:', error);
         // Откатываем изменения в случае ошибки
@@ -323,7 +348,7 @@ function PlaceDetails({ id }: { id?: string }) {
               </View>
             </View>
 
-            <PlaceSubscriptionButton placeId={post.id} />
+            <PlaceSubscriptionButton placeId={post.id} onChanged={embedded ? preview.refresh : undefined} />
             <Text style={styles.bio}>{post.bio}</Text>
 
             <TouchableOpacity style={styles.addressRow} onPress={openInMap}>

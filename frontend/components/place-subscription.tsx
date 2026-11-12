@@ -17,7 +17,7 @@ function failureState(error: unknown): State {
   return 'retry';
 }
 
-export function PlaceSubscriptionButton({ placeId }: { placeId: string }) {
+export function PlaceSubscriptionButton({ placeId, onChanged }: { placeId: string; onChanged?: () => void }) {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const [state, setState] = useState<State>('loading');
@@ -68,6 +68,7 @@ export function PlaceSubscriptionButton({ placeId }: { placeId: string }) {
     try {
       const result = await setPlaceSubscription(placeId, !subscribed);
       setState(result.subscribed ? 'subscribed' : 'unsubscribed');
+      onChanged?.();
     } catch (error) {
       const next = failureState(error);
       if (next === 'retry') setMessage(error instanceof ApiError ? error.message : 'Не удалось изменить подписку.');

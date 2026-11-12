@@ -1,20 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { SocialMedia } from '@/components/social-media';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { addSocialComment, getSocialComments, getSocialItem, setSocialLike, socialRequestId, type SocialComment, type SocialItem } from '@/lib/social';
+import { usePostPreview } from '@/lib/web-post-preview';
 
 export default function SocialPostScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   return <SocialPost key={id} id={id} />;
 }
 
-function SocialPost({ id }: { id: string }) {
+export function SocialPost({ id, embedded = false }: { id: string; embedded?: boolean }) {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
+  const preview = usePostPreview();
   const [item, setItem] = useState<SocialItem | null>(null);
   const [comments, setComments] = useState<SocialComment[]>([]);
   const [text, setText] = useState('');
@@ -27,11 +29,17 @@ function SocialPost({ id }: { id: string }) {
     catch { setItem(null); setError('Публикация недоступна или не удалось подключиться к серверу.'); }
     finally { setLoading(false); }
   }, [id]);
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { if (!embedded) void load(); }, [embedded, load]));
+  useEffect(() => {
+    if (!embedded) return;
+    let active = true;
+    Promise.resolve().then(() => { if (active) void load(); });
+    return () => { active = false; };
+  }, [embedded, load, preview.revision]);
   const like = async () => {
     if (!item || busy) return;
     setBusy(true); setError('');
-    try { setItem(await setSocialLike(item.id, !item.liked)); }
+    try { setItem(await setSocialLike(item.id, !item.liked)); if (embedded) preview.refresh(); }
     catch { setError('Не удалось изменить отметку. Попробуйте ещё раз.'); }
     finally { setBusy(false); }
   };
@@ -43,6 +51,7 @@ function SocialPost({ id }: { id: string }) {
       await addSocialComment(item.id, text.trim(), requestId);
       setComments(await getSocialComments(item.id)); setItem(await getSocialItem(item.id));
       setPendingComment(null); setText('');
+      if (embedded) preview.refresh();
     } catch { setError('Не удалось подтвердить комментарий. Повторная отправка не создаст дубликат.'); }
     finally { setBusy(false); }
   };
@@ -52,7 +61,7 @@ function SocialPost({ id }: { id: string }) {
     else router.push({ pathname: '/profile/[id]', params: { id: item.authorId } });
   };
   return <View style={styles.page}>
-    <Stack.Screen options={{ title: 'Публикация' }} />
+    {!embedded && <Stack.Screen options={{ title: 'Публикация' }} />}
     {loading ? <ActivityIndicator style={styles.loading} color={palette.olive} /> : !item ? <View style={styles.content}><Text style={styles.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.link}>Повторить</Text></Pressable></View> : <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.card}>
         <Text style={styles.title}>{item.placeName || item.authorName}</Text>

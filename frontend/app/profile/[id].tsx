@@ -7,6 +7,7 @@ import { getPublicProfile, type AccountProfile } from '@/lib/account-profile';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { getSocialFeed, type SocialItem } from '@/lib/social';
 import { SocialMedia } from '@/components/social-media';
+import { usePostPreview } from '@/lib/web-post-preview';
 
 export default function PublicProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -15,6 +16,7 @@ export default function PublicProfileScreen() {
 
 function PublicProfile({ id }: { id: string }) {
   const router = useRouter();
+  const preview = usePostPreview();
   const styles = useAppStyles(baseStyles);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [posts, setPosts] = useState<SocialItem[]>([]);
@@ -58,7 +60,8 @@ function PublicProfile({ id }: { id: string }) {
           {!!item.body && <Text style={styles.bio}>{item.body}</Text>}
           {!!(item.mediaUrl || item.imageUrl) && <SocialMedia uri={item.mediaUrl || item.imageUrl!} kind={item.mediaKind || 'image'} style={styles.postImage} />}
           {!!item.originalBody && <Text style={styles.description}>Репост: {item.originalBody}</Text>}
-          <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/post/[id]', params: { id: item.id } })}><Text style={styles.openPost}>Открыть публикацию</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => { if (!preview.open({ type: 'social', id: item.id })) router.push({ pathname: '/post/[id]', params: { id: item.id } }); }}><Text style={styles.openPost}>Открыть публикацию</Text></Pressable>
+          {preview.selected?.type === 'social' && preview.selected.id === item.id && <View pointerEvents="none" style={styles.selectedShade} />}
         </View>)}
       </View>}
     </>}
@@ -84,6 +87,7 @@ const baseStyles = StyleSheet.create({
   buttonText: { color: palette.cream, fontWeight: '700' },
   posts: { gap: 15 },
   post: { backgroundColor: palette.surface, padding: 15, borderRadius: 18, gap: 10 },
+  selectedShade: { ...StyleSheet.absoluteFill, borderRadius: 18, backgroundColor: 'rgba(20, 25, 14, 0.16)' },
   date: { color: palette.muted, fontSize: 12 },
   postImage: { width: '100%', height: 220, borderRadius: 12 },
   openPost: { color: palette.olive, fontWeight: '700', fontSize: 14 },

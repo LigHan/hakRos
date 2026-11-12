@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getUserSession } from './user-session';
-import { track } from './statistics';
+import { authorized, track } from './statistics';
 
 // Ключи для хранения лайков и избранного по пользователям
 const getLikedPostsKey = (userId: string) => `liked-posts-${userId}`;
@@ -31,14 +31,9 @@ export async function isUserAuthenticated(): Promise<boolean> {
 // Получить лайкнутые посты пользователя
 export async function getLikedPosts(): Promise<string[]> {
   try {
-    const userId = await getCurrentUserId();
-    if (!userId) {
-      console.log('❌ Нет пользователя для получения лайков');
-      return [];
-    }
-
-    const likedPostsData = await AsyncStorage.getItem(getLikedPostsKey(userId));
-    return likedPostsData ? JSON.parse(likedPostsData) : [];
+    const session = await getUserSession();
+    if (!session?.token || session.role !== 'user') return [];
+    return await authorized('/api/place-likes');
   } catch (error) {
     console.error('❌ Ошибка получения лайкнутых постов:', error);
     return [];
@@ -63,34 +58,16 @@ export async function getFavoritePosts(): Promise<string[]> {
 }
 
 // Добавить/удалить лайк
-export async function toggleLike(postId: string): Promise<{success: boolean; requiresAuth: boolean}> {
+export async function toggleLike(postId: string, desired?: boolean): Promise<{success: boolean; requiresAuth: boolean; liked?: boolean; likes?: number}> {
   try {
-    const userId = await getCurrentUserId();
-    if (!userId) {
-      console.log('❌ Нет пользователя для лайка');
+    const session = await getUserSession();
+    if (!session?.token) {
       return { success: false, requiresAuth: true };
     }
-
-    const currentLiked = await getLikedPosts();
-    const isLiked = currentLiked.includes(postId);
-
-    let newLiked: string[];
-    if (isLiked) {
-      // Удаляем лайк
-      newLiked = currentLiked.filter(id => id !== postId);
-      console.log(`👎 Пользователь ${userId} убрал лайк с поста ${postId}`);
-    } else {
-      // Добавляем лайк
-      newLiked = [...currentLiked, postId];
-      console.log(`👍 Пользователь ${userId} лайкнул пост ${postId}`);
-    }
-
-    // Сохраняем в AsyncStorage под ключом пользователя
-    await AsyncStorage.setItem(getLikedPostsKey(userId), JSON.stringify(newLiked));
-    if (!isLiked) track('like_added', postId);
-    console.log('✅ Лайки сохранены для пользователя:', userId);
-
-    return { success: true, requiresAuth: false };
+    const liked = desired ?? !(await authorized('/api/place-likes') as string[]).includes(postId);
+    const result = await authorized(`/api/posts/${encodeURIComponent(postId)}/like`, { method: liked ? 'PUT' : 'DELETE' });
+    if (liked) track('like_added', postId);
+    return { success: true, requiresAuth: false, liked: result.liked, likes: result.likes };
   } catch (error) {
     console.error('❌ Ошибка переключения лайка:', error);
     return { success: false, requiresAuth: false };

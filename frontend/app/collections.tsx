@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { PlaceCover } from '@/components/place-photo';
-import { databaseService, type Post } from '@/constants/content';
+import { databaseService, formatPlaceRating, type Post } from '@/constants/content';
 import { palette } from '@/lib/app-appearance';
 import { getConnections } from '@/lib/connections';
 import { getFavoritePosts, getLikedPosts } from '@/lib/likes-favorites';
@@ -53,7 +53,7 @@ export default function CollectionsScreen() {
     <View style={styles.tabs}>{([['favorites', 'Сохранённые'], ['liked', 'Понравилось'], ['subscriptions', 'Подписки']] as const).map(([id, title]) => <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: tab === id }} onPress={() => setTab(id)} style={[styles.tab, tab === id && styles.activeTab]}><Text numberOfLines={1} style={[styles.tabText, tab === id && styles.activeText]}>{title}</Text></Pressable>)}</View>
     {loading ? <ActivityIndicator color={palette.olive} style={styles.state} /> : error || (tab === 'subscriptions' && connectionError) ? <Text accessibilityRole="alert" style={styles.stateText}>{error || connectionError}</Text> : <ScrollView contentContainerStyle={styles.list}>
       {items.length === 0 && <Text style={styles.stateText}>Здесь пока нет мест.</Text>}
-      {items.map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => router.push({ pathname: '/company/[id]', params: { id: item.id } })} style={styles.row}><PlaceCover place={item} style={styles.image} compact /><View style={styles.copy}><Text style={styles.name}>{item.place}</Text><Text style={styles.rating}>★ {item.rating.toFixed(1).replace('.', ',')}</Text></View><Ionicons name="chevron-forward" size={20} color={palette.olive} /></Pressable>)}
+      {items.map(item => <Pressable key={item.id} accessibilityRole="button" onPress={() => router.push({ pathname: '/company/[id]', params: { id: item.id } })} style={styles.row}><PlaceCover place={item} style={styles.image} compact /><View style={styles.copy}><Text style={styles.name}>{item.place}</Text><Text style={styles.rating}>★ {formatPlaceRating(item)}</Text></View><Ionicons name="chevron-forward" size={20} color={palette.olive} /></Pressable>)}
     </ScrollView>}
   </View>;
 }

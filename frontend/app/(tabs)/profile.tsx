@@ -24,7 +24,7 @@ import { PlaceCover } from '@/components/place-photo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SocialMedia } from '@/components/social-media';
-import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
+import { databaseService, formatPlaceRating, formatCompactNumber, type Post } from '@/constants/content';
 import {
   getFavoritePosts,
   getFavoritePostsCount,
@@ -163,7 +163,6 @@ export default function ProfileScreen() {
 
   const companyFollowers = companyPosts.reduce((sum, post) => sum + (post.followers || 0), 0);
   const companyTotalLikes = companyPosts.reduce((sum, post) => sum + (post.totalLikes || post.likes || 0), 0);
-  const companyRecentLikes = companyPosts.reduce((sum, post) => sum + (post.likes || 0), 0);
 
   // Получаем отзывы для компании
   const companyReviews = useMemo(() => {
@@ -279,7 +278,6 @@ export default function ProfileScreen() {
               </View>
             ))}
           </View>
-          {isCompany && companyRecentLikes > 0 && <Text style={styles.subStatNote}>{`+${formatNumber(companyRecentLikes)} лайков на последних постах`}</Text>}
         </View>
 
         {!isCompany && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/plans')} style={styles.managePlaces}>
@@ -366,7 +364,7 @@ export default function ProfileScreen() {
               <View style={styles.placeHeading}><Ionicons name="location-outline" size={21} color="#283618" /><Text style={styles.placeHeadingText}>Сохранённые места</Text></View>
               {favorites.length ? favorites.map(item => <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityLabel={`Открыть ${item.place}`} style={styles.placeRow} onPress={() => handleOpenCompany(item.id)}>
                 <PlaceCover place={item} style={styles.placeImage} compact />
-                <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.place}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text>{!!item.tags[0] && <Text style={styles.placeTag}>{item.tags[0]}</Text>}</View>
+                <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.place}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{formatPlaceRating(item)}</Text></Text>{!!item.tags[0] && <Text style={styles.placeTag}>{item.tags[0]}</Text>}</View>
                 <Ionicons name="bookmark" size={22} color="#BC6C25" />
               </TouchableOpacity>) : <Text style={styles.emptyStateText}>Сохраняйте интересные места, чтобы быстро к ним вернуться.</Text>}
             </View> : <View style={styles.ownSocialList}>{ownSocialItems.filter(item => item.kind === (profileTab === 'posts' ? 'post' : 'story')).length ? ownSocialItems.filter(item => item.kind === (profileTab === 'posts' ? 'post' : 'story')).map(item => <View key={item.id} style={styles.ownSocialItem}>

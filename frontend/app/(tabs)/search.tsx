@@ -4,7 +4,7 @@ import { SketchFrame } from '@/components/sketch-frame';
 import { useAppStyles } from '@/lib/app-appearance';
 import { track } from '@/lib/statistics';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -25,10 +25,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedView } from '@/components/themed-view';
-import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
+import { databaseService, formatPlaceRating, formatCompactNumber, type Post } from '@/constants/content';
 import {
   isPostFavorite,
-  isPostLiked,
+  getLikedPosts,
   isUserAuthenticated,
   toggleFavorite,
   toggleLike
@@ -54,6 +54,8 @@ export default function SearchScreen() {
   const [isDetailVisible, setDetailVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const reactionPending = useRef(new Set<string>());
+  const [reactionError, setReactionError] = useState('');
   const [postLikes, setPostLikes] = useState<Record<string, boolean>>({});
   const [postFavorites, setPostFavorites] = useState<Record<string, boolean>>({});
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
@@ -65,9 +67,7 @@ export default function SearchScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  useFocusEffect(useCallback(() => { void loadData(); }, [loadData]));
 
   const reload = () => {
     setLoading(true);
@@ -83,8 +83,9 @@ export default function SearchScreen() {
       const newPostLikes: Record<string, boolean> = {};
       const newPostFavorites: Record<string, boolean> = {};
 
+      const liked = new Set(await getLikedPosts());
       for (const post of postsData) {
-        newPostLikes[post.id] = await isPostLiked(post.id);
+        newPostLikes[post.id] = liked.has(post.id);
         newPostFavorites[post.id] = await isPostFavorite(post.id);
       }
 
@@ -106,35 +107,21 @@ export default function SearchScreen() {
     return true;
   };
 
-  // Лайк/анлайк поста
+  // Сервер возвращает действительное состояние и общий счётчик лайков.
   const handleLike = async (postId: string) => {
-    const success = await requireAuth(async () => {
+    if (reactionPending.current.has(postId)) return;
+    return requireAuth(async () => {
+      reactionPending.current.add(postId); setReactionError('');
       try {
-        const wasLiked = postLikes[postId];
-        const newLikedState = !wasLiked;
-
-        // Мгновенно обновляем UI
-        setPostLikes(prev => ({ ...prev, [postId]: newLikedState }));
-        setPostsData(prev => prev.map(p =>
-          p.id === postId
-            ? { ...p, likes: newLikedState ? p.likes + 1 : Math.max(0, p.likes - 1) }
-            : p
-        ));
-
-        // Сохраняем в хранилище
-        const result = await toggleLike(postId);
-        if (!result.success) {
-          throw new Error('Failed to toggle like');
-        }
-      } catch (error) {
-        console.error('❌ Ошибка при лайке:', error);
-        // Откатываем изменения в случае ошибки
-        setPostLikes(prev => ({ ...prev, [postId]: !postLikes[postId] }));
-        throw error;
-      }
+        const result = await toggleLike(postId, !postLikes[postId]);
+        if (!result.success || result.likes === undefined) throw new Error('Не удалось сохранить лайк.');
+        const likes = result.likes;
+        setPostLikes(prev => ({ ...prev, [postId]: Boolean(result.liked) }));
+        setPostsData(prev => prev.map(p => p.id === postId ? { ...p, likes, totalLikes: likes } : p));
+        setActivePost(prev => prev?.id === postId ? { ...prev, likes, totalLikes: likes } : prev);
+      } catch (error) { setReactionError(error instanceof Error ? error.message : 'Не удалось сохранить лайк.'); }
+      finally { reactionPending.current.delete(postId); }
     });
-
-    return success;
   };
 
   // Добавить/удалить из избранного
@@ -261,7 +248,7 @@ export default function SearchScreen() {
           <Text style={styles.place}>{item.place}</Text>
           <View style={styles.ratingBadge}>
             <Ionicons name="star" size={16} color="#BC6C25" />
-            <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
+            <Text style={styles.ratingText}>{formatPlaceRating(item)}</Text>
           </View>
         </View>
         <TouchableOpacity
@@ -325,6 +312,7 @@ export default function SearchScreen() {
 
   return (
     <ThemedView {...webData({ hakrosFocus: 'search' })} style={styles.container}>
+      {reactionError ? <Text accessibilityRole="alert" style={{ color: '#b42318', padding: 8 }}>{reactionError}</Text> : null}
       <View style={[styles.searchHeader, { paddingTop: top + 16 }]}>
         <Text style={styles.pageTitle}>Поиск</Text>
         <Text style={styles.pageSubtitle}>Найдите место для новых впечатлений</Text>
@@ -440,7 +428,7 @@ export default function SearchScreen() {
                     <Text style={styles.detailTitle}>{activePost.place}</Text>
                     <View style={styles.detailRating}>
                       <Ionicons name="star" size={18} color="#BC6C25" />
-                      <Text style={styles.detailRatingText}>{activePost.rating.toFixed(1)}</Text>
+                      <Text style={styles.detailRatingText}>{formatPlaceRating(activePost)}</Text>
                     </View>
                   </View>
                   <Text style={styles.detailSubtitle}>{activePost.user}</Text>

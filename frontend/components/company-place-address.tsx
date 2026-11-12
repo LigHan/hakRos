@@ -113,15 +113,8 @@ function PlaceLocationPicker({ initialAddress, initialCoordinates, onCancel, onA
       activeRequest.current = request;
       void findAddressSuggestions(text, request.signal).then(results => {
         if (request.signal.aborted) return;
-        if (results.length === 1) {
-          const { latitude, longitude, address } = results[0];
-          setCoordinates({ latitude, longitude });
-          setCenter({ latitude, longitude, sequence: 1 });
-          setAddress(address);
-        } else {
-          setChoices(results);
-          setMessage(results.length ? 'Уточните адрес из списка или нажмите на карту.' : 'Укажите точку на карте или проверьте адрес.');
-        }
+        setChoices(results);
+        setMessage(results.length ? 'Проверьте адрес и выберите его из списка или нажмите на карту.' : 'Укажите точку на карте или проверьте адрес.');
       }).catch(() => {
         if (!request.signal.aborted) setMessage('Поиск адреса недоступен. Укажите точку на карте.');
       }).finally(() => {

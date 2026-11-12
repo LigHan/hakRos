@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlaceCover } from '@/components/place-photo';
 import { SketchFrame } from '@/components/sketch-frame';
 import { SocialFeed } from '@/components/social-feed';
-import { databaseService, type Post, type Story } from '@/constants/content';
+import { databaseService, formatPlaceRating, type Post, type Story } from '@/constants/content';
 import { palette, useAppStyles, useAppearance } from '@/lib/app-appearance';
 import { matchesPlaceCategory, placeCategories } from '@/lib/place-categories';
 import { getConnections } from '@/lib/connections';
@@ -129,7 +129,7 @@ export default function RecommendationsScreen() {
               <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => openPost(item.id)} style={styles.photoWrap}>
                 <PlaceCover place={item} style={styles.photo} />
                 <LinearGradient colors={['transparent', 'rgba(20, 25, 14, 0.78)']} style={styles.photoShade} />
-                <View style={styles.photoCaption}><Ionicons name="location" size={15} color="#fff" /><Text numberOfLines={1} style={styles.photoPlace}>{item.place}</Text><Text style={styles.photoRating}>★ <Text style={styles.photoRatingValue}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text></View>
+                <View style={styles.photoCaption}><Ionicons name="location" size={15} color="#fff" /><Text numberOfLines={1} style={styles.photoPlace}>{item.place}</Text><Text style={styles.photoRating}>★ <Text style={styles.photoRatingValue}>{formatPlaceRating(item)}</Text></Text></View>
               </Pressable>
               <Pressable accessibilityRole="button" accessibilityLabel={favorites.includes(item.id) ? `Убрать ${item.place} из избранного` : `Сохранить ${item.place}`} disabled={!!savingFavorite} onPress={() => void savePlace(item.id)} style={styles.bookmark}>
                 <Ionicons name={favorites.includes(item.id) ? 'bookmark' : 'bookmark-outline'} size={23} color="#fff" />

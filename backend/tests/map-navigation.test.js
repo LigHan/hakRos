@@ -142,6 +142,39 @@ test('определяет русский адрес без подмены вы�
   assert.match((await unavailable.json()).error, /введите адрес вручную/);
 });
 
+test('ищет адрес без названия города, не подставляя дом в другом городе', async t => {
+  const provider = express();
+  const requests = [];
+  provider.get('/api/', (req, res) => {
+    requests.push(req.query.q);
+    if (req.query.q === 'снежная 23') {
+      const wrong = house('Снежная улица', '23');
+      wrong.properties.city = 'Москва';
+      return res.json({ features: [wrong, house('Снежная улица', '23', 37.83)] });
+    }
+    res.json({ features: [] });
+  });
+  const upstream = await listen(t, provider);
+  const app = express();
+  app.use('/api/map', createMapNavigationRouter({ geocoderUrl: upstream + '/api/', namesForPoint: async () => value => value || '' }));
+  const base = await listen(t, app);
+  const result = await fetch(base + '/api/map/search?q=' + encodeURIComponent('ул. Снежная, 23, Донецк')).then(res => res.json());
+  assert.equal(result.length, 1);
+  assert.equal(result[0].longitude, 37.83);
+  assert.ok(requests.includes('снежная 23'));
+});
+
+test('площадь не подменяется улицей с похожим названием', async t => {
+  const provider = express();
+  provider.get('/api/', (_req, res) => res.json({ features: [house('улица Ленина', '23')] }));
+  const upstream = await listen(t, provider);
+  const app = express();
+  app.use('/api/map', createMapNavigationRouter({ geocoderUrl: upstream + '/api/', namesForPoint: async () => value => value || '' }));
+  const base = await listen(t, app);
+  const result = await fetch(base + '/api/map/search?q=' + encodeURIComponent('площадь Ленина, Донецк')).then(res => res.json());
+  assert.deepEqual(result, []);
+});
+
 test('передаёт точки в правильный профиль OSRM и возвращает линию маршрута', async t => {
   const provider = express();
   const requests = [];

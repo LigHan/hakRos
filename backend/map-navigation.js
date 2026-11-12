@@ -76,13 +76,14 @@ function tokens(value) {
 function addressMatches(place, query) {
   const requested = tokens(query);
   const house = query.match(houseNumber)?.[1];
-  const fields = [place.name, place.street, place.housenumber, place.city, place.district,
+  const fields = [place.name, place['name:ru'], place.street, place['street:ru'], place.housenumber,
+    place.city, place['city:ru'], place.district, place['district:ru'],
     place.locality, place.county, place.state, place.country, place.postcode];
   const words = new Set(tokens(fields.filter(value => typeof value === 'string').join(' ')));
   if (house) {
     const numberWords = tokens(house);
-    const name = tokens(typeof place.name === 'string' ? place.name : '');
-    const street = tokens(typeof place.street === 'string' ? place.street : '');
+    const name = tokens([place.name, place['name:ru']].filter(value => typeof value === 'string').join(' '));
+    const street = tokens([place.street, place['street:ru']].filter(value => typeof value === 'string').join(' '));
     if (!requested.some(word => !numberWords.includes(word) && (street.includes(word) || name.includes(word)))) return false;
     // Число может быть частью названия места, например «Парк 50 лет».
     if (comparable(String(place.housenumber ?? '')) !== comparable(house) && !numberWords.every(word => name.includes(word))) {
@@ -187,6 +188,20 @@ function createMapNavigationRouter({
         const localSpelling = query.replace(/и/g, 'і').replace(/ы/g, 'и');
         if (!candidates.length && localSpelling !== query) {
           candidates = addressCandidates(await searchPhoton(localSpelling), query);
+        }
+        // Some providers omit the city in the matched feature or fail on a full address.
+        // Search the local part separately, but do not silently substitute another city.
+        const localQuery = query.replace(/(?:^|\s)донецьк(?=\s|$)/gu, ' ').replace(/\s+/g, ' ').trim();
+        if (!candidates.length && localQuery !== query && tokens(localQuery).length) {
+          const variants = [...new Set([localQuery, localQuery.replace(/и/g, 'і').replace(/ы/g, 'и')])];
+          for (const variant of variants) {
+            const found = addressCandidates(await searchPhoton(variant), localQuery).filter(({ latitude, longitude, place }) => {
+              const locality = [place.city, place.locality].filter(value => typeof value === 'string').join(' ');
+              return Math.abs(latitude - cityCenter.latitude) < 0.5 && Math.abs(longitude - cityCenter.longitude) < 0.7 &&
+                (!locality || comparable(locality).includes('донецк'));
+            });
+            if (found.length) { candidates = found; break; }
+          }
         }
         if (cache.size >= 128) cache.delete(cache.keys().next().value);
         cache.set(query, { candidates, expires: Date.now() + 10 * 60 * 1000 });

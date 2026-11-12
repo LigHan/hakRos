@@ -21,7 +21,7 @@ import { PlacePhoto } from '@/components/place-photo';
 import { PlaceSubscriptionButton } from '@/components/place-subscription';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
+import { databaseService, formatCompactNumber, formatPlaceRating, type Post } from '@/constants/content';
 import {
   isPostFavorite,
   isPostLiked,
@@ -47,6 +47,9 @@ export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?:
   const [loading, setLoading] = useState(Boolean(id));
   const [error, setError] = useState<string | null>(id ? null : 'Место не найдено');
   const [isLiked, setIsLiked] = useState(false);
+  const [myRating, setMyRating] = useState<number | null>(null);
+  const [reactionBusy, setReactionBusy] = useState(false);
+  const [reactionError, setReactionError] = useState('');
   const [isFavorite, setIsFavorite] = useState(false);
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
   const [activePhotoKey, setActivePhotoKey] = useState<string | null>(null);
@@ -93,10 +96,19 @@ export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?:
           return;
         }
         const [liked, favorite] = await Promise.all([isPostLiked(id), isPostFavorite(id)]);
+        const session = await getUserSession();
+        let savedRating: number | null = null;
+        if (session?.role === 'user' && session.token) {
+          try {
+            const reactions = await authorized(`/api/posts/${encodeURIComponent(id)}/reactions`);
+            savedRating = reactions.myRating;
+          } catch { setReactionError('Не удалось загрузить вашу оценку.'); }
+        }
         track('card_view', postData.id);
         setPost(postData);
         setIsLiked(liked);
         setIsFavorite(favorite);
+        setMyRating(savedRating);
       })
       .catch(error => {
         console.error('Не удалось загрузить карточку места', error);
@@ -143,34 +155,38 @@ export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?:
 
   // Лайк/анлайк поста
   const handleLike = async () => {
-    if (!post) return;
+    if (!post || reactionBusy) return;
 
     const success = await requireAuth(async () => {
+      setReactionBusy(true); setReactionError('');
       try {
-        const newLikedState = !isLiked;
-        setIsLiked(newLikedState);
-
-        // Обновляем счетчик лайков локально
-        setPost(prev => prev ? {
-          ...prev,
-          likes: newLikedState ? prev.likes + 1 : Math.max(0, prev.likes - 1)
-        } : null);
-
-        // Сохраняем в хранилище
-        const result = await toggleLike(post.id);
-        if (!result.success) {
-          throw new Error('Failed to toggle like');
-        }
+        const result = await toggleLike(post.id, !isLiked);
+        if (!result.success || result.likes === undefined) throw new Error('Не удалось сохранить лайк.');
+        setIsLiked(Boolean(result.liked));
+        setPost(prev => prev ? { ...prev, likes: result.likes!, totalLikes: result.likes! } : null);
         if (embedded) preview.refresh();
       } catch (error) {
-        console.error('❌ Ошибка при лайке:', error);
-        // Откатываем изменения в случае ошибки
-        setIsLiked(!isLiked);
-        throw error;
-      }
+        setReactionError(error instanceof Error ? error.message : 'Не удалось сохранить лайк.');
+      } finally { setReactionBusy(false); }
     });
 
     return success;
+  };
+
+  const ratePlace = async (rating: number) => {
+    if (!post || reactionBusy) return;
+    await requireAuth(async () => {
+      setReactionBusy(true); setReactionError('');
+      try {
+        const result = await authorized(`/api/posts/${encodeURIComponent(post.id)}/rating`, {
+          method: rating === myRating ? 'DELETE' : 'PUT', body: JSON.stringify({ rating }),
+        });
+        setMyRating(result.myRating);
+        setPost(current => current ? { ...current, rating: result.rating, ratingCount: result.ratingCount } : null);
+        if (embedded) preview.refresh();
+      } catch (cause) { setReactionError(cause instanceof Error ? cause.message : 'Не удалось сохранить оценку.'); }
+      finally { setReactionBusy(false); }
+    });
   };
 
   // Добавить/удалить из избранного
@@ -330,8 +346,21 @@ export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?:
               </ThemedText>
               <View style={styles.ratingBadge}>
                 <Ionicons name="star" size={18} color="#BC6C25" />
-                <Text style={styles.ratingText}>{post.rating.toFixed(1)}</Text>
+                <Text style={styles.ratingText}>{formatPlaceRating(post)}</Text>
               </View>
+            </View>
+
+            <View style={{ marginTop: 12, gap: 6 }}>
+              <Text style={{ color: '#606C38' }}>{post.ratingCount ? `Оценок: ${post.ratingCount} · Ваша оценка` : 'Оцените это место'}</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[1, 2, 3, 4, 5].map(star => <TouchableOpacity key={star} accessibilityRole="button"
+                  accessibilityLabel={`Оценить на ${star} из 5`} accessibilityState={{ selected: myRating === star, disabled: reactionBusy }}
+                  disabled={reactionBusy} onPress={() => void ratePlace(star)}>
+                  <Ionicons name={star <= (myRating ?? 0) ? 'star' : 'star-outline'} size={27} color="#BC6C25" />
+                </TouchableOpacity>)}
+              </View>
+              {myRating ? <Text style={{ color: '#606C38', fontSize: 12 }}>Нажмите выбранную звезду ещё раз, чтобы убрать оценку.</Text> : null}
+              {reactionError ? <Text accessibilityRole="alert" style={{ color: '#b42318' }}>{reactionError}</Text> : null}
             </View>
 
             <View style={styles.authorRow}>
@@ -353,7 +382,7 @@ export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?:
 
             <TouchableOpacity style={styles.addressRow} onPress={openInMap}>
               <Ionicons name="location-outline" size={18} color="#606C38" />
-              <Text style={styles.addressText}>{post.address}</Text>
+              <Text style={styles.addressText}>{post.address || 'Адрес не указан · показать на карте'}</Text>
             </TouchableOpacity>
           </View>
 
@@ -374,7 +403,7 @@ export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?:
 
           {/* Действия */}
           <View style={styles.actions}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleLike}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={isLiked ? 'Убрать лайк' : 'Нравится'} disabled={reactionBusy} style={styles.actionButton} onPress={handleLike}>
               <Ionicons
                 name={isLiked ? "heart" : "heart-outline"}
                 size={24}
@@ -526,7 +555,7 @@ export function PlaceDetails({ id, embedded = false }: { id?: string; embedded?:
             </View>
             <Text style={styles.authModalTitle}>Требуется авторизация</Text>
             <Text style={styles.authModalText}>
-              Чтобы лайкать посты и добавлять их в избранное, пожалуйста, войдите в свой аккаунт
+              Чтобы ставить оценки, лайкать посты и добавлять их в избранное, войдите в свой аккаунт.
             </Text>
             <View style={styles.authModalButtons}>
               <TouchableOpacity

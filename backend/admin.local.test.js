@@ -71,13 +71,12 @@ test('Локальная админка: права, данные пользов
     assert.equal((await request(`/api/admin/places/${place.id}`, { token: admin, method: 'PUT', body: { ...placeUpdate, place: '' } })).status, 400);
     assert.equal((await request(`/api/admin/places/${place.id}`, { token: admin, method: 'PUT', body: { ...placeUpdate, category: 'unknown' } })).status, 400);
     assert.equal((await request('/api/admin/places/missing', { token: admin, method: 'PUT', body: placeUpdate })).status, 404);
-    const postWithReview = (await request('/api/posts')).data.find(item => item.reviews.length > 0);
-    assert.ok(postWithReview, 'в демоданных есть отзыв для проверки');
-    const review = postWithReview.reviews[0];
+    // Демо-отзывы не отображаются публично, но старые записи остаются доступными для модерации.
+    const review = { id: 'r1' };
       for (const token of [user, company]) assert.equal((await request(`/api/admin/reviews/${review.id}`, { token, method: 'DELETE' })).status, 403);
       assert.equal((await request(`/api/admin/reviews/${review.id}`, { method: 'DELETE' })).status, 401);
       assert.equal((await request(`/api/admin/reviews/${review.id}`, { token: admin, method: 'DELETE' })).status, 200);
-      assert.ok(!(await request(`/api/posts/${postWithReview.id}`)).data.reviews.some(item => item.id === review.id));
+      assert.ok(!(await request('/api/posts/1')).data.reviews.some(item => item.id === review.id));
       assert.equal((await request(`/api/admin/reviews/${review.id}`, { token: admin, method: 'DELETE' })).status, 404);
     for (const token of [user, company]) assert.equal((await request(`/api/admin/places/${place.id}`, { token, method: 'DELETE' })).status, 403);
     assert.equal((await request(`/api/admin/places/${place.id}`, { method: 'DELETE' })).status, 401);

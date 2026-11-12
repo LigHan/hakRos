@@ -41,6 +41,7 @@ export default function MapScreen() {
   const [name, setName] = useState('');
   const [query, setQuery] = useState('');
   const [searchState, setSearchState] = useState<MapSearchState | null>(null);
+  const [manualDestination, setManualDestination] = useState<{ title: string; planOnSelect: boolean } | null>(null);
   const [destination, setDestination] = useState<MapSearchResult | null>(null);
   const [plan, setPlan] = useState<RoutePlan | null>(null);
   const [route, setRoute] = useState<(MapRoute & { sequence: number }) | null>(null);
@@ -93,6 +94,7 @@ export default function MapScreen() {
   }, [resetRoute]);
   const showDestination = useCallback((result: MapSearchResult, planOnSelect: boolean) => {
     cancelSearch();
+    setManualDestination(null);
     resetRoute();
     setDestination(result);
     setPlan(planOnSelect ? { mode: 'walk', origin: null, pickingOrigin: false } : null);
@@ -106,8 +108,12 @@ export default function MapScreen() {
   const select = useCallback((latitude: number, longitude: number) => {
     const point = { latitude, longitude };
     if (plan?.pickingOrigin) chooseOrigin(point, 'точка на карте');
+    else if (manualDestination) {
+      showDestination({ id: `manual-${Date.now()}`, title: manualDestination.title, subtitle: 'Точка выбрана вручную', ...point }, manualDestination.planOnSelect);
+      setNotice('Точка выбрана вручную. Она не сохраняется в карточке заведения.');
+    }
     else if (adding || !destination) setSelected(point);
-  }, [adding, destination, plan?.pickingOrigin, chooseOrigin]);
+  }, [adding, destination, plan?.pickingOrigin, chooseOrigin, manualDestination, showDestination]);
   const canvasError = useCallback((message: string) => setError(message), []);
   const openPlace = useCallback((id: string) => {
     const postId = places.find(point => point.id === id)?.postId;
@@ -158,6 +164,7 @@ export default function MapScreen() {
       setPeople([]);
       setFocused(false);
       setSession(null);
+      setManualDestination(null);
       handledFocus.current = '';
       cancelSearch();
       closeDestination();
@@ -220,6 +227,7 @@ export default function MapScreen() {
   const search = useCallback(async (input: string, fromCard = false, planOnSelect = false, postId?: string) => {
     if (!mapFocused.current) return;
     Keyboard.dismiss();
+    setManualDestination(null);
     cancelSearch();
     const pinned = postId && places.find(point => point.postId === postId);
     if (pinned) {
@@ -231,7 +239,7 @@ export default function MapScreen() {
     if (!text && !fromCard) return;
     if (text.length < 2) {
       setSearchState({ results: [], pending: false, planOnSelect,
-        message: fromCard ? 'У этого места нет адреса.' : 'Введите хотя бы два символа.' });
+        message: fromCard ? 'У этого места нет адреса. Выберите точку вручную.' : 'Введите хотя бы два символа.', manual: fromCard });
       return;
     }
 
@@ -248,19 +256,18 @@ export default function MapScreen() {
         if (placeName) local = places.filter(point => normalize(point.name.trim()) === placeName).slice(0, 5).map(placeSearchResult);
       } catch { /* Address search remains available if the card could not be loaded. */ }
     }
-    setSearchState({ results: local, pending: true, planOnSelect });
+    setSearchState({ results: local, pending: true, planOnSelect, manual: fromCard });
 
     try {
       const addresses = await findAddresses(text, request.signal);
       if (request.signal.aborted) return;
       const results = [...local, ...addresses];
-      if (fromCard && results.length === 1 && !local.length) showDestination(results[0], planOnSelect);
-      else setSearchState({ results, pending: false, planOnSelect,
-        message: local.length && postId ? 'Выберите точку и проверьте её на карте: она ещё не связана с карточкой.' : results.length ? undefined : 'Адрес или место не найдено. Уточните запрос.' });
+      setSearchState({ results, pending: false, planOnSelect, manual: fromCard,
+        message: fromCard && results.length ? 'Проверьте результат: точка ещё не связана с карточкой.' : results.length ? undefined : fromCard ? 'Адрес или место не найдено. Уточните запрос или выберите точку вручную.' : 'Адрес или место не найдено. Уточните запрос.' });
     } catch (cause) {
       if (!request.signal.aborted) {
         const message = cause instanceof ApiError ? cause.message : 'Не удалось найти адрес. Проверьте соединение и повторите поиск.';
-        setSearchState({ results: local, pending: false, planOnSelect, message });
+        setSearchState({ results: local, pending: false, planOnSelect, message, manual: fromCard });
       }
     }
   }, [places, cancelSearch, showDestination]);
@@ -272,6 +279,7 @@ export default function MapScreen() {
       if (!action.query && !action.postId) return true;
       setQuery(action.query ?? '');
       setAdding(false);
+      setManualDestination(null);
       setNotice('');
       closeDestination();
       void search(action.query ?? '', true, action.type === 'route', action.postId);
@@ -383,7 +391,8 @@ export default function MapScreen() {
         </TouchableOpacity>
       </View>
       {searchState && <MapSearchResults search={searchState}
-        onSelect={result => showDestination(result, searchState.planOnSelect)} onClose={cancelSearch} />}
+        onSelect={result => showDestination(result, searchState.planOnSelect)} onClose={cancelSearch}
+        onPickPoint={() => { setManualDestination({ title: query || 'Выбранное место', planOnSelect: searchState.planOnSelect }); cancelSearch(); setNotice('Нажмите на карту, чтобы выбрать место.'); }} />}
       {(error || notice) ? <TouchableOpacity onPress={() => { setError(''); setNotice(''); }} style={styles.message}><Text style={error ? styles.error : styles.hint}>{error || notice}  ×</Text></TouchableOpacity> : null}
       <MapBottomSheet
         key={adding ? 'add-place' : destination?.id ?? 'map-actions'}

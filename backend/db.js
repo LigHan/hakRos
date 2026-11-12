@@ -82,6 +82,28 @@ const schema = `
     FOREIGN KEY (post_id) REFERENCES posts (id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS place_likes (
+    post_id TEXT NOT NULL, user_id INTEGER NOT NULL,
+    PRIMARY KEY (post_id, user_id),
+    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS place_ratings (
+    post_id TEXT NOT NULL, user_id INTEGER NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    PRIMARY KEY (post_id, user_id),
+    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE TRIGGER IF NOT EXISTS remove_deleted_place_reactions AFTER DELETE ON posts BEGIN
+    DELETE FROM place_likes WHERE post_id = OLD.id;
+    DELETE FROM place_ratings WHERE post_id = OLD.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS remove_deleted_user_place_reactions AFTER DELETE ON users BEGIN
+    DELETE FROM place_likes WHERE user_id = OLD.id;
+    DELETE FROM place_ratings WHERE user_id = OLD.id;
+  END;
+
   CREATE TABLE IF NOT EXISTS contact_info (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id TEXT NOT NULL,

@@ -41,6 +41,7 @@ export type Post = {
   totalLikes: number;
   followers: number;
   rating: number;
+  ratingCount: number;
   tags: string[];
   bio: string;
   address: string;
@@ -50,6 +51,9 @@ export type Post = {
   reviews: Review[];
   contact: ContactInfo[];
 };
+
+export const formatPlaceRating = (post: Pick<Post, 'rating' | 'ratingCount'>): string =>
+  post.ratingCount ? post.rating.toFixed(1).replace('.', ',') : 'Нет оценок';
 
 export const formatCompactNumber = (number: number): string => {
   if (number < 1000) {

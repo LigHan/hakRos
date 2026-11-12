@@ -16,6 +16,7 @@ const path = require('node:path');
 const companyPlaces = require('./company-places')(db, statistics.auth, databaseService);
 const { createAssistantRouter } = require('./assistant/router');
 const leisurePlans = require('./leisure-plans')(db, statistics.auth);
+const placeReactions = require('./place-reactions')(db, statistics.auth);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,7 +48,8 @@ app.use('/api/plans', leisurePlans.router);
 app.use('/api/assistant', createAssistantRouter({
   auth: statistics.auth,
   loadPosts: () => new Promise((resolve, reject) => {
-    db.all(`SELECT p.id, p.place, p.category, p.address, p.bio, p.image, p.rating,
+    db.all(`SELECT p.id, p.place, p.category, p.address, p.bio, p.image,
+      (SELECT AVG(r.rating) FROM place_ratings r WHERE r.post_id=p.id) AS rating,
       pr.entry_type, pr.entry_price, pr.spend_min, pr.spend_max, pr.source AS price_source, pr.updated_at AS price_updated_at
       FROM posts p LEFT JOIN place_pricing pr ON pr.post_id=p.id ORDER BY p.created_at DESC LIMIT 1000`, (error, rows) => error ? reject(error) : resolve(rows));
   }),
@@ -55,6 +57,7 @@ app.use('/api/assistant', createAssistantRouter({
 app.use('/map-assets', express.static(path.join(__dirname, 'map-assets')));
 app.use('/maplibre', express.static(path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist')));
 app.use('/api/map', map.router);
+app.use('/api', placeReactions);
 
 app.get('/', (_req, res) => {
   res.json({ message: 'Сервер работает!', endpoints: ['GET /api', ...endpoints] });

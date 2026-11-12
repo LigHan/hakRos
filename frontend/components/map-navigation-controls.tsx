@@ -12,12 +12,14 @@ export type MapSearchState = {
   pending: boolean;
   message?: string;
   planOnSelect: boolean;
+  manual?: boolean;
 };
 
-export function MapSearchResults({ search, onSelect, onClose }: {
+export function MapSearchResults({ search, onSelect, onClose, onPickPoint }: {
   search: MapSearchState;
   onSelect: (result: MapSearchResult) => void;
   onClose: () => void;
+  onPickPoint: () => void;
 }) {
   const styles = useAppStyles(baseStyles);
   return (
@@ -42,6 +44,10 @@ export function MapSearchResults({ search, onSelect, onClose }: {
           ))}
         </ScrollView>
       )}
+      {search.manual && !search.pending && <TouchableOpacity accessibilityRole="button" onPress={onPickPoint} style={styles.result}>
+        <Ionicons name="locate-outline" size={18} color={palette.olive} />
+        <Text style={styles.title}>Выбрать точку на карте вручную</Text>
+      </TouchableOpacity>}
     </View>
   );
 }

@@ -14,7 +14,7 @@ const screens = {
 const intentSchema = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat', 'clarify', 'home', 'address', 'compare', 'more'] },
+    intent: { type: 'string', enum: ['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat', 'clarify', 'home', 'address', 'price', 'compare', 'more'] },
     reply: { type: 'string', description: 'Короткий ответ без названий мест, адресов, цен, событий и неподтверждённых действий' },
     category: { type: 'string', enum: ['', ...categories] },
     interests: { type: 'array', items: { type: 'string' } },
@@ -44,31 +44,34 @@ function helpReply(message, screen) {
   return screen.help;
 }
 
-const numbers = { один: 1, одна: 1, одно: 1, два: 2, две: 2, пару: 2, пара: 2, трех: 3, три: 3, четыре: 4, пять: 5 };
-function amount(value) { return /^\d+$/.test(value) ? Number(value) : numbers[value]; }
+const numbers = { один: 1, одна: 1, одно: 1, два: 2, две: 2, пару: 2, пара: 2, трех: 3, три: 3, четыре: 4, пять: 5, полтора: 1.5, полторы: 1.5 };
+function amount(value) { return /^\d/.test(value) ? Number(value.replace(/[\s\u00a0\u202f]/g, '').replace(',', '.')) : numbers[value]; }
+function resetsBudget(text) { return /бюджет\s+(?:не\s*важен|любой)|без\s+(?:ограничения|лимита)\s+(?:по\s+)?(?:цене|бюджет)/iu.test(text); }
 
 function evidence(text) {
   const lower = text.toLocaleLowerCase('ru').replace(/ё/g, 'е');
   let budget = null;
   let currency = null;
   if (/бесплатн|без\s+денег|ноль\s+руб/.test(lower)) { budget = 0; currency = 'RUB'; }
-  const money = lower.match(/(\d{1,8}(?:[.,]\d{1,2})?)\s*(руб(?:л(?:ей|я|ь)?)?\.?|₽|р\.|usd|доллар(?:ов|а)?|\$|eur|евро|€)/);
+  const money = lower.match(/(?<![\d.,])((?:\d{1,3}(?:[\s\u00a0\u202f]\d{3})+|\d{1,8})(?:[.,]\d{1,2})?)\s*(руб(?:л(?:ей|я|ь)?)?\.?|₽|р\.?|usd|доллар(?:ов|а)?|\$|eur|евро|€)(?![\p{L}])/u);
   if (money) {
-    budget = Number(money[1].replace(',', '.'));
+    budget = amount(money[1]);
     currency = /^(?:usd|доллар|\$)/.test(money[2]) ? 'USD' : /^(?:eur|евро|€)/.test(money[2]) ? 'EUR' : 'RUB';
   }
   const leadingMoney = lower.match(/([$€])\s*(\d{1,8}(?:[.,]\d{1,2})?)/);
   if (!money && leadingMoney) { budget = Number(leadingMoney[2].replace(',', '.')); currency = leadingMoney[1] === '$' ? 'USD' : 'EUR'; }
+  const budgetWithoutUnit = lower.match(/бюджет(?:\s+(?:до|примерно|около))?\s*[:—-]?\s*((?:\d{1,3}(?:[\s\u00a0\u202f]\d{3})+|\d{1,8})(?:[.,]\d{1,2})?)(?!(?:\d|[.,]\d))/u);
+  if (!money && !leadingMoney && budgetWithoutUnit) { budget = amount(budgetWithoutUnit[1]); currency = 'RUB'; }
   let durationMinutes = null;
-  const time = lower.match(/(\d{1,4}|один|одна|два|две|пару|пара|три|четыре|пять)\s*(час(?:а|ов)?|минут(?:а|ы)?)/);
+  const time = lower.match(/(?<![\d.,])(\d{1,4}(?:[.,]\d{1,2})?|полтора|полторы|один|одна|два|две|пару|пара|три|четыре|пять)\s*(час(?:а|ов)?|минут(?:а|ы)?)(?![\p{L}])/u);
   if (time) durationMinutes = amount(time[1]) * (time[2].startsWith('час') ? 60 : 1);
   const validBudget = budget !== null && Number.isFinite(budget) && budget >= 0 && budget <= 10000000;
-  return { budget: validBudget ? budget : null, currency: validBudget ? currency : null, durationMinutes: durationMinutes > 0 && durationMinutes <= 1440 ? durationMinutes : null };
+  return { budget: validBudget ? budget : null, currency: validBudget ? currency : null, durationMinutes: Number.isInteger(durationMinutes) && durationMinutes > 0 && durationMinutes <= 1440 ? durationMinutes : null };
 }
 
 function validateIntent(raw, message, history) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
-      !['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat', 'clarify', 'home', 'address', 'compare', 'more'].includes(raw.intent) ||
+      !['recommend', 'help', 'place', 'save', 'plan', 'invite', 'chat', 'clarify', 'home', 'address', 'price', 'compare', 'more'].includes(raw.intent) ||
       typeof raw.reply !== 'string' || raw.reply.length > 1000 ||
       typeof raw.category !== 'string' || !['', ...categories].includes(raw.category) ||
       !Array.isArray(raw.interests) || raw.interests.length > 8 || raw.interests.some(v => typeof v !== 'string' || v.length > 80) ||
@@ -81,6 +84,7 @@ function validateIntent(raw, message, history) {
   const userText = userMessages.join(' ');
   const known = { budget: null, currency: null, durationMinutes: null };
   for (const text of userMessages) {
+    if (resetsBudget(text)) { known.budget = null; known.currency = null; }
     const found = evidence(text);
     if (found.budget !== null) { known.budget = found.budget; known.currency = found.currency; }
     if (found.durationMinutes !== null) known.durationMinutes = found.durationMinutes;
@@ -106,8 +110,8 @@ function validateIntent(raw, message, history) {
   const explicit = value => value && lower.includes(value.toLocaleLowerCase('ru'));
   let withFriends = false;
   for (const text of userMessages) {
-    if (/без\s+(?:друзей|компании)|(?:^|[\s,.])(?:один(?:а)?|сам(?:а)?)(?:$|[\s,.!?])/iu.test(text) && !/(?:не\s+один|с\s+друг)/iu.test(text)) withFriends = false;
-    else if (/друг|друз|компани|вместе|пати/iu.test(text)) withFriends = true;
+    if ((/без\s+(?:друзей|компании)|(?:^|[\s,.])(?:один(?:а)?|сам(?:а)?)(?:$|[\s,.!?])/iu.test(text) && !/не\s+один/iu.test(text)) || /не\s+хочу\s+с\s+друг/iu.test(text)) withFriends = false;
+    else if (/(?:^|[^\p{L}])(?:друг(?:а|ом|у|и|ов|е)?|друз[\p{L}]*|компани[\p{L}]*|вместе|пати)(?![\p{L}])/iu.test(text)) withFriends = true;
   }
   return {
     intent: raw.intent, reply: raw.reply.trim(), category: inferredCategory || (raw.category && !rejected.has(raw.category) ? raw.category : null), excludedCategories: [...rejected],
@@ -121,4 +125,4 @@ function validateIntent(raw, message, history) {
   };
 }
 
-module.exports = { intentSchema, validateIntent, screenContext, helpReply, evidence };
+module.exports = { intentSchema, validateIntent, screenContext, helpReply, evidence, resetsBudget };

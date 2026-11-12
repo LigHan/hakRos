@@ -220,7 +220,8 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
     const history = messages.slice(1).slice(-20).map(item => ({ role: item.role, content: item.content.slice(0, 1000) }));
     const recentCards = [...messages].reverse().find(item => item.cards?.length)?.cards ?? [];
     const preferences = [...messages].reverse().find(item => item.preferences)?.preferences;
-    const excluded = excludedCards.length ? excludedCards : /(?:предложи|покажи|хочу|давай).{0,15}(?:другое|другие|ещ[её])/iu.test(message) ? recentCards : [];
+    const wantsMore = excludedCards.length > 0 || /(?:предложи|покажи|хочу|давай).{0,15}(?:другое|другие|ещ[её])/iu.test(message);
+    const excluded = wantsMore ? [...new Set([...messages.flatMap(item => item.cards ?? []), ...excludedCards].map(card => card.placeId))].slice(-200) : [];
     setMessages(current => [...current, { role: 'user', content: message }]);
     setDraft('');
     setError('');
@@ -236,7 +237,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
       const response = await fetch(`${API_URL}/api/assistant/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
-        body: JSON.stringify({ message, history, context, excludePlaceIds: excluded.map(card => card.placeId) }),
+        body: JSON.stringify({ message, history, context, excludePlaceIds: excluded }),
         signal: controller.signal,
       });
       if (response.status === 401) throw new Error('unauthorized');
@@ -246,14 +247,14 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
       const cards: PlaceCard[] = Array.isArray(data.cards) ? data.cards.filter((item: PlaceCard) => item && typeof item.placeId === 'string' && typeof item.name === 'string' && Array.isArray(item.actions)) : [];
       const nextPreferences = data.parameters ? { budget: data.parameters.budget ?? null, currency: data.parameters.currency ?? null, durationMinutes: data.parameters.durationMinutes ?? null } : undefined;
       setMessages(current => [...current, { role: 'assistant', content: data.reply, cards, durationMinutes: data.parameters?.durationMinutes ?? null, preferences: nextPreferences }]);
-      if (data.mode === 'gigachat') setStatus(data.mode);
+      if (data.mode === 'gigachat' && data.providerUsed === true) setStatus(data.mode);
       if (typeof data.catalogAvailable === 'boolean') setCatalogAvailable(data.catalogAvailable);
     } catch (failure) {
       setMessages(current => current.slice(0, -1));
       setDraft(message);
       const unauthorized = failure instanceof Error && failure.message === 'unauthorized';
       if (unauthorized) setStatus('unauthorized');
-      setError(unauthorized ? 'Сессия завершилась. Войдите в аккаунт снова.' : failure instanceof Error && failure.message === 'rate_limited' ? 'Слишком много запросов. Подожди немного и попробуй снова.' : 'Не удалось связаться с помощником. Проверьте подключение и попробуйте ещё раз.');
+      setError(unauthorized ? 'Сессия завершилась. Войдите в аккаунт снова.' : failure instanceof Error && failure.message === 'rate_limited' ? 'Слишком много запросов. Подожди немного и попробуй снова.' : 'Помощник временно недоступен. Текст сохранён — попробуй отправить его ещё раз.');
     } finally {
       clearTimeout(timeout);
       sendingRef.current = false;
@@ -371,7 +372,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
                   <Ionicons name="arrow-up" size={21} color="#fffdf4" />
                 </Pressable>
               </View>
-              <Text style={styles.footer}>Не отправляйте пароли и личные данные.</Text>
+              <Text style={styles.footer}>Сообщения и последние реплики передаются GigaChat. Не отправляйте пароли и личные данные.</Text>
             </SafeAreaView>
           </KeyboardAvoidingView>
         </View>

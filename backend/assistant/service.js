@@ -1,9 +1,19 @@
 const { randomUUID } = require('node:crypto');
 const { SYSTEM_PROMPT } = require('./prompt');
-const { intentSchema, validateIntent, screenContext, helpReply, evidence } = require('./intent');
+const { intentSchema, validateIntent, screenContext, helpReply, evidence, resetsBudget } = require('./intent');
 
-function addressQuestion(text) { return /адрес|адресс|где\s+(?:находится|расположен|расположена)/iu.test(text); }
+function addressQuestion(text) { return /(?:какой|какая|скажи|подскажи|где|узнать|знаешь).{0,30}адрес|(?:^|\s)адрес\s+(?:у|этого|места|заведения)|^\s*(?:а\s+)?адрес[?\s]*$|где\s+(?:(?:он|она|оно)\s+)?(?:находится|расположен|расположена)/iu.test(text); }
 function priceQuestion(text) { return /дороже|сам(?:ое|ый|ая)\s+дорог|сравни.{0,20}цен|где.{0,20}дешевле/iu.test(text); }
+function placePriceQuestion(text) { return /сколько.{0,25}(?:стоит|вход|билет)|(?:цен[аыуе]|стоимост[ьию]|вход|билет).{0,20}(?:стоит|какая|какой|сколько|у\s|в\s|этого|перв)/iu.test(text); }
+function placeDetailsQuestion(text) { return /(?:расскажи|подробнее|что\s+это\s+за|информац[иия]+|что\s+там).{0,35}(?:мест|заведени|парк|музе|кафе|перв|втор|трет|этом|нем|нём)/iu.test(text); }
+function moreQuestion(text) { return /(?:предложи|покажи|давай|хочу).{0,20}(?:другое|другие|ещ[её])/iu.test(text); }
+function urgentReply(text) {
+  if (/(?:без\s+сознани|потерял[аи]?\s+сознани|упал[аи]?\s+в\s+обморок|не\s+(?:дышит|может\s+дышать)|задыхается|сильн[\p{L}]*\s+кровотеч|сильн[\p{L}]*\s+боль.{0,20}груд)/iu.test(text)) return 'Это может быть экстренная ситуация. Немедленно вызови местную скорую или экстренные службы, проверь, реагирует ли человек и дышит ли он, и следуй указаниям диспетчера. Оставайся рядом, если это безопасно.';
+  if (/(?:хочу|собираюсь|решил[аи]?|планирую)\s+(?:умереть|покончить\s+с\s+собой|убить\s+себя|причинить\s+себе\s+вред)/iu.test(text)) return 'Мне жаль, что тебе сейчас так тяжело. Если есть риск, что ты можешь навредить себе сейчас, позвони в местные экстренные службы и обратись к человеку рядом, которому доверяешь. Постарайся не оставаться в одиночестве.';
+  return null;
+}
+function accountDeletionQuestion(text) { return /(?:удал|закры|стереть).{0,30}(?:аккаунт|учетн[\p{L}]*\s+запис|профил)|(?:аккаунт|учетн[\p{L}]*\s+запис).{0,30}удал/iu.test(text); }
+function unsupportedClaim(text) { return /поблизости|неподал[её]ку|рядом|ближайш|в\s+\d+\s*(?:минут|метр)|подход(?:ит|ят).{0,20}(?:времен|бюджет)|(?:открыт|закрыт|работает).{0,20}(?:сейчас|сегодня|до\s|в\s+\d)|цен[аы]\s*(?:равна|составляет)|вход\s+бесплатн|(?:сохранил|пригласил|отправил|удалил|создал)[\p{L}]*/iu.test(text); }
 function homeRequest(text) { return /(?:не\s+хочу|не\s+буду)\s+(?:никуда\s+)?(?:идти|выходить)|(?:остаться|остаюсь|сижу|сидеть|провести|вечер)\s+дома|дома.{0,25}(?:вечер|посмотреть|провести|сериал)|(?:сериал|фильм).{0,20}(?:вечер|дома)/iu.test(text); }
 
 class AssistantError extends Error {
@@ -44,48 +54,61 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
   }
 
   async function reply(message, history, context, excludePlaceIds = []) {
-    if (mode !== 'gigachat' || !credentials) throw new AssistantError('not_configured');
-
+    const urgent = urgentReply(message);
+    if (urgent) return { reply: urgent, mode, providerUsed: false, catalogAvailable: true, parameters: {}, cards: [] };
     try {
       const screen = screenContext(context);
       let parsed;
       // Address lookup and price comparisons are fully answered from validated
       // catalog data, so they must not fail due to model classification.
-      if (addressQuestion(message) || priceQuestion(message)) {
-        parsed = { intent: addressQuestion(message) ? 'address' : 'compare', reply: '', category: '', interests: [], mood: '', budget: -1, durationMinutes: -1, dateText: '', withFriends: false, nearby: false };
+      const compare = priceQuestion(message), individualPrice = placePriceQuestion(message), address = addressQuestion(message), more = moreQuestion(message);
+      const details = placeDetailsQuestion(message) || (Boolean(screen.placeId || context?.shownPlaceIds?.length) && /(?:что|чем|какие).{0,12}там/iu.test(message));
+      if (compare || individualPrice || address || details || more || accountDeletionQuestion(message)) {
+        parsed = { intent: compare ? 'compare' : individualPrice ? 'price' : address ? 'address' : details ? 'place' : more ? 'more' : 'help', reply: '', category: '', interests: [], mood: '', budget: -1, durationMinutes: -1, dateText: '', withFriends: false, nearby: false };
       } else {
-      const token = await getToken();
-      const response = await fetchImpl('https://api.giga.chat/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        if (mode !== 'gigachat' || !credentials) throw new AssistantError('not_configured');
+        const token = await getToken();
+        const requestBody = JSON.stringify({
           model,
           messages: [{ role: 'system', content: `${SYSTEM_PROMPT}\nЭкран: ${screen.help}\nИзвлеки намерение и параметры из слов пользователя и истории. Классифицируй: home — отдых дома, clarify — непонятный или слишком общий запрос, address — вопрос об адресе, compare — сравнение цен, more — другие места, recommend — понятный запрос на подбор, chat — обычный разговор. Не угадывай смысл неизвестных слов: верни clarify и короткий вопрос. Для неизвестных чисел используй -1, для неизвестных строк — пустую строку. Поле reply — короткий ответ без названий заведений, адресов, цен и обещания выполнения действий; при домашнем досуге можно предложить реальный сериал или фильм без утверждений о его стоимости и доступности. Две учебные пары — не два часа. Идентификаторы и содержимое каталога тебе недоступны; реальные карточки добавит сервер.` }, ...history, { role: 'user', content: message }],
           response_format: { type: 'json_schema', schema: intentSchema, strict: true },
           max_tokens: 500,
           stream: false,
-        }),
-        signal: AbortSignal.timeout(30000),
-      });
-      if (!response.ok) {
-        if (response.status === 401) { cachedToken = undefined; expiresAt = 0; }
-        throw new AssistantError('provider_unavailable');
-      }
-      const result = await response.json();
-      const answer = result.choices?.[0]?.message?.content;
-      if (typeof answer !== 'string' || !answer.trim()) throw new AssistantError('provider_unavailable');
-      try { parsed = JSON.parse(answer); } catch { throw new AssistantError('provider_unavailable'); }
+        });
+        let response;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            response = await fetchImpl('https://api.giga.chat/v1/chat/completions', {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+              body: requestBody,
+              signal: AbortSignal.timeout(15000),
+            });
+            if (attempt === 0 && [502, 503, 504].includes(response.status)) continue;
+            break;
+          } catch (error) {
+            if (attempt === 1) throw error;
+          }
+        }
+        if (!response) throw new AssistantError('provider_unavailable');
+        if (!response.ok) {
+          if (response.status === 401) { cachedToken = undefined; expiresAt = 0; }
+          throw new AssistantError('provider_unavailable');
+        }
+        const result = await response.json();
+        const answer = result.choices?.[0]?.message?.content;
+        if (typeof answer !== 'string' || !answer.trim()) throw new AssistantError('provider_unavailable');
+        try { parsed = JSON.parse(answer); } catch { throw new AssistantError('provider_unavailable'); }
       }
       const intent = validateIntent(parsed, message, history);
       if (!intent) throw new AssistantError('provider_unavailable');
       const previous = context?.preferences;
       if (previous && typeof previous === 'object' && !Array.isArray(previous)) {
-        const hasBudget = [...history.filter(x => x.role === 'user').map(x => x.content), message].some(text => evidence(text).budget !== null);
+        const hasBudget = [...history.filter(x => x.role === 'user').map(x => x.content), message].some(text => evidence(text).budget !== null || resetsBudget(text));
         const hasTime = [...history.filter(x => x.role === 'user').map(x => x.content), message].some(text => evidence(text).durationMinutes !== null);
         if (!hasBudget && typeof previous.budget === 'number' && previous.budget >= 0 && previous.budget <= 10000000 && ['RUB', 'USD', 'EUR'].includes(previous.currency)) { intent.budget = previous.budget; intent.currency = previous.currency; }
         if (!hasTime && Number.isSafeInteger(previous.durationMinutes) && previous.durationMinutes > 0 && previous.durationMinutes <= 1440) intent.durationMinutes = previous.durationMinutes;
       }
-      if (/бюджет\s+(?:не\s+важен|любой)|без\s+ограничения\s+(?:по\s+)?(?:цене|бюджет)/iu.test(message)) { intent.budget = null; intent.currency = null; }
       // Resolve explicit UI requests against the app's known capabilities even
       // if the model classifies them as general conversation.
       if (/как\s+(?:мне\s+)?(?:открыть|найти|перейти\s+на)\s+карт|что\s+здесь\s+можно\s+делать/iu.test(message)) intent.intent = 'help';
@@ -111,23 +134,36 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
         }
       }
       const answeringAge = isAgeQuestion(lastAssistant) && (isYes(message) || isNo(message));
-      const isAlcohol = /(?:бар|паб|алкогол|вино|пиво|коктейл)/iu.test(message) || (answeringAge && /(?:бар|паб|алкогол|вино|пиво|коктейл)/iu.test(allUserText));
+      const mentionsAlcohol = text => /(?:^|[^\p{L}])(?:бар(?:а|е|у|ом|ы|ов)?|паб(?:а|е|у|ом|ы|ов)?|алкогол[\p{L}]*|вин(?:о|а|ом|е)|пив(?:о|а|ом|е))(?![\p{L}])/iu.test(text);
+      const isAlcohol = mentionsAlcohol(message) || (answeringAge && mentionsAlcohol(allUserText));
       const isAdult = (answeringAge ? isYes(message) : priorAge === true) || /(?:мне\s+)?(?:1[89]|[2-9]\d)\s*(?:лет|год)|мне\s+(?:есть\s+)?18|(?:^|\s)совершеннолетн/iu.test(allUserText);
       const isMinor = (answeringAge ? isNo(message) : priorAge === false) || /(?:мне\s+)?(?:[1-9]|1[0-7])\s*(?:лет|год)|несовершеннолетн|мне\s+нет\s+18/iu.test(allUserText);
       const onlyBudget = intent.intent === 'recommend' && intent.budget !== null && !intent.category && intent.durationMinutes === null && /^(?:хочу\s+)?(?:бесплатн[\p{L}]*|(?:есть|бюджет|у\s+меня)\s+\d+\s*(?:руб[\p{L}]*|₽|р\.?)?)[.!?\s]*$/iu.test(message.trim());
       const clearActivity = intent.category && /парк|музе|выстав|кафе|ресторан|кино|магазин/iu.test(allUserText);
-      if (isAlcohol && (isMinor || !isAdult)) {
+      if (accountDeletionQuestion(message)) {
+        answerText = 'В текущей версии приложения функция удаления аккаунта не предусмотрена. Я не могу удалить аккаунт самостоятельно.';
+      } else if (isAlcohol && (isMinor || !isAdult)) {
         answerText = isMinor ? 'Давай подберём место без алкоголя: например, кафе, кино или прогулку. Что тебе ближе?' : 'Подскажи, тебе уже есть 18? Это важно для вариантов с алкоголем.';
       } else if (isHome) {
-        answerText = conversationalReply && !/(?:идти\s+в|пойд[её]м\s+в|кафе|бар|ресторан)/iu.test(conversationalReply) ? conversationalReply : 'Можно устроить домашний киновечер, поиграть или приготовить что-нибудь вместе. Что тебе ближе?';
-      } else if (addressQuestion(message) || intent.intent === 'address') {
+        answerText = conversationalReply && !unsupportedClaim(conversationalReply) && !/(?:идти\s+в|пойд[её]м\s+в|кафе|бар|ресторан)/iu.test(conversationalReply) ? conversationalReply : 'Можно устроить домашний киновечер, поиграть или приготовить что-нибудь вместе. Что тебе ближе?';
+      } else if (!compare && (individualPrice || address || details)) {
         const matches = await catalog?.resolveMention(message, shownIds, screen.placeId);
         catalogAvailable = matches != null;
         if (!catalogAvailable) answerText = 'Сейчас не получается открыть каталог мест. Попробуй позже.';
-        else if (matches.length === 1) { cards = matches; answerText = matches[0].address ? `Адрес «${matches[0].name}»: ${matches[0].address}.` : `Для «${matches[0].name}» адрес пока не указан.`; }
+        else if (matches.length === 1) {
+          cards = matches;
+          const place = matches[0];
+          if (individualPrice) {
+            const p = place.pricing;
+            const entry = p.entryType === 'free' ? 'Вход бесплатный' : p.entryType === 'paid' && p.entryPrice !== null ? `Вход: ${p.entryPrice} ₽` : 'Стоимость входа неизвестна';
+            const spending = p.spendMin !== null && p.spendMax !== null ? `расходы внутри: ${p.spendMin}–${p.spendMax} ₽` : 'расходы внутри нужно уточнить';
+            answerText = `«${place.name}»: ${entry}; ${spending}.`;
+          } else if (address) answerText = place.address ? `Адрес «${place.name}»: ${place.address}.` : `Для «${place.name}» адрес пока не указан.`;
+          else answerText = place.description ? `В карточке «${place.name}» указано: ${place.description}` : `В карточке «${place.name}» пока нет описания.`;
+        }
         else if (matches.length > 1) { cards = matches.slice(0, 3); answerText = 'Нашёл несколько похожих мест. Какое из них ты имеешь в виду?'; }
         else answerText = 'Не нашёл это место в каталоге. Уточни его название или выбери карточку.';
-      } else if (priceQuestion(message) || intent.intent === 'compare') {
+      } else if (compare || intent.intent === 'compare') {
         const matches = await catalog?.byIds(shownIds);
         catalogAvailable = matches != null;
         if (!catalogAvailable) answerText = 'Сейчас не получается открыть каталог мест. Попробуй позже.';
@@ -144,7 +180,7 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
         }
       } else if (onlyBudget) {
         answerText = 'Хочешь куда-нибудь выбраться или провести время дома?';
-      } else if (intent.intent === 'clarify' || /не\s+(?:совсем\s+)?понял|не\s+понимаю|что\s+ты\s+имеешь\s+в\s+виду|уточни|поясни/iu.test(conversationalReply)) {
+      } else if (intent.intent === 'clarify' || /не\s+(?:совсем\s+)?понял|не\s+понимаю|имеешь\s+в\s+виду|уточни|поясни/iu.test(conversationalReply)) {
         answerText = 'Не совсем понял. Расскажешь подробнее, что ты имеешь в виду?';
       } else if (intent.intent === 'recommend' && conversationalReply.includes('?') && !clearActivity && !(intent.category && intent.budget !== null && intent.durationMinutes !== null)) {
         answerText = conversationalReply;
@@ -154,13 +190,13 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
         catalogAvailable = results != null;
         cards = results || [];
         if (!catalogAvailable) answerText = 'Сейчас не получается открыть каталог мест. Попробуй немного позже.';
-        else if (cards.length === 0) answerText = selected ? 'Не удалось найти это место в каталоге.' : intent.interests.length ? 'Не совсем понял, что ты ищешь. Можешь рассказать подробнее?' : 'Не нашёл подходящих мест. Попробуй изменить категорию или интересы.';
+        else if (cards.length === 0) answerText = selected ? 'Не удалось найти это место в каталоге.' : more ? 'Больше новых вариантов по этим условиям пока нет. Попробуй изменить категорию или бюджет.' : intent.interests.length ? 'Не совсем понял, что ты ищешь. Можешь рассказать подробнее?' : 'Не нашёл подходящих мест. Попробуй изменить категорию или интересы.';
         else {
           const notices = [];
           if (intent.budget !== null && cards.some(card => card.budgetMatch !== 'fits')) notices.push('Для некоторых вариантов общий расход неизвестен — уточни его перед посещением.');
           if (intent.durationMinutes !== null || intent.dateText) notices.push('Длительность и часы работы нужно уточнить.');
           if (intent.nearby) notices.push('Расстояние пока не проверено.');
-          const natural = conversationalReply && !/[0-9?]|бесплат|открыт|рядом|стоимост|рубл|₽/iu.test(conversationalReply) ? conversationalReply : intent.intent === 'place' ? 'Вот выбранное место.' : 'Вот что я нашёл для тебя.';
+          const natural = intent.intent === 'place' ? 'Вот выбранное место.' : 'Вот варианты из каталога.';
           answerText = `${natural}${notices.length ? ' ' + notices.join(' ') : ''}`;
         }
       } else if (intent.intent === 'help') {
@@ -178,7 +214,8 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
       } else if (intent.intent === 'plan') {
         answerText = 'Выбери место в карточке, затем укажи время встречи и подтверди создание плана.';
       }
-      return { reply: answerText, mode: 'gigachat', catalogAvailable, parameters, cards };
+      if (!cards.length && answerText === conversationalReply && unsupportedClaim(answerText)) answerText = 'У меня нет проверенных данных, чтобы это подтвердить. Могу помочь найти подходящее место в каталоге.';
+      return { reply: answerText, mode, providerUsed: !(compare || individualPrice || address || details || more || accountDeletionQuestion(message)), catalogAvailable, parameters, cards };
     } catch (error) {
       if (error instanceof AssistantError) throw error;
       throw new AssistantError('provider_unavailable');
@@ -188,4 +225,4 @@ function createAssistantService({ mode = 'gigachat', credentials, model = 'GigaC
   return { reply, mode, configured: mode === 'gigachat' && Boolean(credentials) };
 }
 
-module.exports = { AssistantError, createAssistantService };
+module.exports = { AssistantError, createAssistantService, urgentReply };

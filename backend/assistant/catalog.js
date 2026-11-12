@@ -65,15 +65,27 @@ function createCatalog({ url, loadPosts, fetchImpl = fetch } = {}) {
     const places = await load();
     if (!places) return null;
     const normalize = value => value.toLocaleLowerCase('ru').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-    const words = normalize(text).split(' ');
+    const query = normalize(text);
+    const ordinals = [[/\b1\b|перв(?:ое|ого|ом|ый|ую)/iu, 0], [/\b2\b|втор(?:ое|ого|ом|ой|ую)/iu, 1], [/\b3\b|трет(?:ье|ьего|ьем|ий|ью)/iu, 2]];
+    for (const [pattern, index] of ordinals) {
+      if (pattern.test(text) && shownIds[index]) return places.filter(place => place.id === shownIds[index]).map(place => card(place, false));
+    }
+    const exact = places.filter(place => {
+      const name = normalize(place.name);
+      return name.length >= 4 && (` ${query} `).includes(` ${name} `);
+    });
+    if (exact.length) return exact.map(place => card(place, false));
+    const stop = /^(?:адрес[а-я]*|адресс[а-я]*|где|какой|какая|какое|сколько|стоимость|стоит|вход|билет[а-я]*|находится|расположен[а-я]*|мест[а-я]*|тест|парк[а-я]*|кафе|музе[а-я]*|площад[а-я]*|улиц[а-я]*|друг[а-я]*|перв[а-я]*|втор[а-я]*|трет[а-я]*)$/u;
+    const words = query.split(' ').filter(word => word.length >= 4 && !stop.test(word));
     const score = place => {
-      const names = normalize(place.name).split(' ').filter(word => word.length >= 4);
+      const names = normalize(place.name).split(' ').filter(word => word.length >= 4 && !stop.test(word));
       return names.reduce((n, word) => n + Number(words.some(candidate => candidate.length >= 4 && (candidate === word || (word.length >= 6 && candidate.slice(0, 5) === word.slice(0, 5))))), 0);
     };
     const ranked = places.map(place => ({ place, score: score(place) })).filter(item => item.score > 0).sort((a,b) => b.score - a.score);
     if (ranked.length) return ranked.filter(item => item.score === ranked[0].score).map(item => card(item.place, false));
-    if (selectedId) return places.filter(place => place.id === selectedId).map(place => card(place, false));
-    if (/(?:^|\s)(?:это|этом|туда|него|нее)(?:$|[\s?!.,])/iu.test(text) && shownIds.length === 1) return places.filter(place => place.id === shownIds[0]).map(place => card(place, false));
+    const refersToSelection = words.length === 0 || /(?:^|\s)(?:это|этого|этом|туда|там|него|нее|здесь|эту)(?:$|[\s?!.,])/iu.test(text);
+    if (refersToSelection && selectedId) return places.filter(place => place.id === selectedId).map(place => card(place, false));
+    if (refersToSelection && shownIds.length === 1) return places.filter(place => place.id === shownIds[0]).map(place => card(place, false));
     return [];
   }
 

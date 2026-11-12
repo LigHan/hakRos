@@ -1,5 +1,5 @@
 const express = require('express');
-const { AssistantError, createAssistantService } = require('./service');
+const { AssistantError, createAssistantService, urgentReply } = require('./service');
 const { createCatalog } = require('./catalog');
 
 function createAssistantRouter(options = {}) {
@@ -18,6 +18,10 @@ function createAssistantRouter(options = {}) {
   const windowMs = options.windowMs ?? 60000;
 
   function limitCalls(req, res, next) {
+    if (typeof req.body?.message === 'string' && req.body.message.length <= 1000 && urgentReply(req.body.message)) {
+      res.locals.releaseAssistant = () => {};
+      return next();
+    }
     const account = String(req.account.id);
     const now = Date.now();
     for (const [id, entry] of calls) if (entry.until <= now) calls.delete(id);
@@ -41,7 +45,7 @@ function createAssistantRouter(options = {}) {
   router.post('/chat', limitCalls, async (req, res) => {
     const { message, history = [], context = {}, excludePlaceIds = [] } = req.body ?? {};
     if (typeof message !== 'string' || !message.trim() || message.length > 1000 ||
-        !Array.isArray(excludePlaceIds) || excludePlaceIds.length > 12 || excludePlaceIds.some(id => typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id)) ||
+        !Array.isArray(excludePlaceIds) || excludePlaceIds.length > 200 || excludePlaceIds.some(id => typeof id !== 'string' || !/^[\w-]{1,128}$/.test(id)) ||
         !context || typeof context !== 'object' || Array.isArray(context) ||
         (context.screen != null && (typeof context.screen !== 'string' || context.screen.length > 32)) ||
         (context.placeId != null && (typeof context.placeId !== 'string' || !/^[\w-]{1,128}$/.test(context.placeId))) ||

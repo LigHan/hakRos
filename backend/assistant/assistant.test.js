@@ -84,6 +84,9 @@ test('conversation resolves a named place, compares only known expenses, and cha
   assert.equal(changed.parameters.budget, 500); assert.deepEqual(changed.cards.map(x => x.placeId), ['b', 'a']);
   assert.equal(changed.cards[0].budgetMatch, 'fits'); assert.equal(changed.cards[1].budgetMatch, 'unknown');
   assert.equal(changed.cards.some(x => x.placeId === 'c'), false);
+  const resetHistory = [{ role: 'user', content: 'Бюджет 500 рублей' }, { role: 'assistant', content: 'Понял.' }, { role: 'user', content: 'Бюджет не важен' }];
+  const reset = await service.reply('Хочу в парк', resetHistory, { preferences: { budget: 500, currency: 'RUB', durationMinutes: null } });
+  assert.equal(reset.parameters.budget, null);
 });
 
 test('asks a useful question, handles unclear requests, home and age appropriately', async () => {
@@ -103,6 +106,8 @@ test('asks a useful question, handles unclear requests, home and age appropriate
   const misclassified = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ reply: 'Хочешь грязевые ванны? Уточни, пожалуйста, что имеешь в виду.' })), catalog });
   const corrected = await misclassified.reply('Есть 500 рублей и 2 часа, нужны грязнульки', [], {});
   assert.deepEqual(corrected.cards, []); assert.doesNotMatch(corrected.reply, /ванны/);
+  const guessed = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ reply: 'Наверное, это бары? Подскажи точнее, что имеешь в виду?' })), catalog });
+  const neutral = await guessed.reply('Нужны грязнульки', [], {}); assert.doesNotMatch(neutral.reply, /бары/); assert.deepEqual(neutral.cards, []);
   const redundantQuestion = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ category: 'park', reply: 'Ты хочешь погулять в парке?' })), catalog });
   const enough = await redundantQuestion.reply('Хочу в парк с другом, есть 500 рублей и два часа', [], {});
   assert.equal(enough.cards.length, 2); assert.doesNotMatch(enough.reply, /\?/);
@@ -157,9 +162,81 @@ test('returns no invented locations for empty category, missing place or unavail
   assert.deepEqual(empty.cards, []); assert.match(empty.reply, /Не нашёл/);
   const single = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ intent: 'place' })), catalog });
   const missing = await single.reply('Что это за место?', [], { screen: 'place', placeId: 'unknown' });
-  assert.deepEqual(missing.cards, []); assert.match(missing.reply, /Не удалось найти/);
+  assert.deepEqual(missing.cards, []); assert.match(missing.reply, /Не нашёл|Не удалось найти/);
   const unavailable = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output()), catalog: createCatalog({ loadPosts: async () => { throw Error('offline'); } }) });
   assert.equal((await unavailable.reply('Куда пойти?', [])).catalogAvailable, false);
+});
+
+test('parses grouped money, decimal and spoken durations and remembers a reset', () => {
+  assert.deepEqual(evidence('1 500 рублей и 2,5 часа'), { budget: 1500, currency: 'RUB', durationMinutes: 150 });
+  assert.equal(evidence('Бюджет 500').budget, 500);
+  assert.equal(evidence('Бюджет 500, хочу в музей').budget, 500);
+  assert.equal(evidence('полтора часа').durationMinutes, 90);
+  assert.equal(evidence('две пары').durationMinutes, null);
+  assert.equal(evidence('2.5 часа').durationMinutes, 150);
+  const history = [{ role: 'user', content: 'Бюджет 500 рублей' }, { role: 'assistant', content: 'Понял.' }, { role: 'user', content: 'Бюджет не важен' }];
+  assert.equal(validateIntent(output(), 'Хочу в музей', history).budget, null);
+  assert.equal(validateIntent(output(), 'Предложи другое', []).withFriends, false);
+  assert.equal(validateIntent(output(), 'Не хочу с другом, пойду один', []).withFriends, false);
+});
+
+test('answers catalog price, address and ordinal details using only matching records', async () => {
+  const places = createCatalog({ loadPosts: async () => [
+    { id: 'a', place: 'ТЕСТ Парк Янтарный', address: 'Тестовая улица, 1', bio: 'Деревья и аллеи.', category: 'park', entry_type: 'free', spend_min: 0, spend_max: 0, price_source: 'ТЕСТ' },
+    { id: 'b', place: 'ТЕСТ Парк Без Адреса', address: '', bio: 'Описание второго.', category: 'park' },
+    { id: 'c', place: 'ТЕСТ Кафе Олива', address: 'Улица 2', category: 'cafe' },
+    { id: 'd', place: 'ТЕСТ Кафе Олива', address: 'Улица 3', category: 'cafe' },
+  ] });
+  const service = createAssistantService({ catalog: places });
+  const address = await service.reply('Какой адрес у ТЕСТ Парк Янтарный?', [], {});
+  assert.equal(address.cards.length, 1); assert.equal(address.cards[0].placeId, 'a'); assert.match(address.reply, /Тестовая улица, 1/);
+  const absent = await service.reply('Какой адрес у вымышленной башни Кристон?', [], {});
+  assert.deepEqual(absent.cards, []); assert.match(absent.reply, /Не нашёл/);
+  const duplicate = await service.reply('Какой адрес у кафе Олива?', [], {}); assert.equal(duplicate.cards.length, 2);
+  const price = await service.reply('Сколько стоит вход в ТЕСТ Парк Янтарный?', [], {});
+  assert.match(price.reply, /Вход бесплатный/); assert.doesNotMatch(price.reply, /Адрес/);
+  const details = await service.reply('Расскажи подробнее о первом месте', [], { shownPlaceIds: ['a', 'b'] });
+  assert.match(details.reply, /Деревья и аллеи/); assert.equal(details.cards[0].placeId, 'a');
+  assert.doesNotMatch(details.reply, /покормить птиц/);
+});
+
+test('avoids misleading model prefaces and false age requests', async () => {
+  const unsafe = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ reply: 'Вот парки поблизости, которые подходят по времени.' })), catalog });
+  const recommendation = await unsafe.reply('Есть 500 рублей и 2 часа, хочу в парк', [], {});
+  assert.doesNotMatch(recommendation.reply, /поблизости|подходят по времени/i);
+  const animal = createAssistantService({ credentials: 'test', fetchImpl: fakeProvider(output({ intent: 'chat', reply: 'Барсук — животное.' })), catalog });
+  assert.doesNotMatch((await animal.reply('Кто такой барсук?', [], {})).reply, /18/);
+  assert.doesNotMatch((await animal.reply('Хочу устроить барбекю', [], {})).reply, /18/);
+  assert.match((await animal.reply('Как удалить аккаунт?', [], {})).reply, /не предусмотрена/);
+});
+
+test('urgent messages bypass unavailable provider and rate limit', async () => {
+  const service = createAssistantService({});
+  const urgent = await service.reply('Человек рядом потерял сознание', [], {});
+  assert.match(urgent.reply, /экстренн|скорую/i); assert.match(urgent.reply, /диспетчер/i);
+  await withServer(service, async base => {
+    assert.equal((await post(base, { message: 'Привет' })).status, 503);
+    const result = await post(base, { message: 'Человек рядом потерял сознание' });
+    assert.equal(result.status, 200); assert.match((await result.json()).reply, /экстренн|скорую/i);
+  }, undefined, { limit: 1 });
+});
+
+test('retries a transient provider failure at most once', async () => {
+  let calls = 0;
+  const provider = async url => {
+    if (url.includes('/oauth')) return { ok: true, json: async () => ({ access_token: 'test', expires_at: Date.now() + 1800000 }) };
+    calls++;
+    if (calls === 1) return { ok: false, status: 503 };
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(output({ intent: 'chat', reply: 'Привет!' })) } }] }) };
+  };
+  const service = createAssistantService({ credentials: 'test', fetchImpl: provider, catalog });
+  assert.equal((await service.reply('Привет', [], {})).reply, 'Привет!'); assert.equal(calls, 2);
+  let limitedCalls = 0;
+  const limited = createAssistantService({ credentials: 'test', catalog, fetchImpl: async url => {
+    if (url.includes('/oauth')) return { ok: true, json: async () => ({ access_token: 'test', expires_at: Date.now() + 1800000 }) };
+    limitedCalls++; return { ok: false, status: 429 };
+  } });
+  await assert.rejects(limited.reply('Привет', [], {}), { code: 'provider_unavailable' }); assert.equal(limitedCalls, 1);
 });
 
 test('unknown distance is disclosed and unsafe model output fails closed', async () => {

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { SketchFrame } from '@/components/sketch-frame';
@@ -11,11 +11,13 @@ import { palette, useAppStyles } from '@/lib/app-appearance';
 import { addSocialComment, getSocialComments, getSocialFeed, getSocialItem, publishSocial, setSocialLike, socialRequestId, type SocialComment, type SocialItem } from '@/lib/social';
 import { getUserSession, type UserSession } from '@/lib/user-session';
 import { ApiError } from '@/lib/statistics';
+import { usePostPreview } from '@/lib/web-post-preview';
 
 type StoryEntry = { id: string; authorKey: string; name: string; text: string; image: string | null; mediaKind: 'image' | 'video'; avatar: string | null; placeId: string | null };
 export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Story[]; legacyError: boolean }) {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
+  const preview = usePostPreview();
   const [session, setSession] = useState<UserSession | null>(null);
   const [items, setItems] = useState<SocialItem[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error' | 'auth'>('loading');
@@ -56,6 +58,12 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
     } finally { inFlight.current = false; }
   }, []);
   useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useEffect(() => {
+    if (!preview.revision) return;
+    let active = true;
+    Promise.resolve().then(() => { if (active) void load(); });
+    return () => { active = false; };
+  }, [load, preview.revision]);
   const groups = useMemo(() => {
     const stories: StoryEntry[] = [
       ...items.filter(item => item.kind === 'story').map(item => ({ id: item.id, authorKey: item.placeId ? `place:${item.placeId}` : `user:${item.authorId}`, name: item.placeName || item.authorName, text: item.body, image: item.mediaUrl || item.imageUrl, mediaKind: item.mediaKind || 'image' as const, avatar: item.authorAvatar ?? null, placeId: item.placeId })),
@@ -67,7 +75,9 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
   }, [items, legacyStories]);
   const posts = items.filter(item => item.kind === 'post');
   const activeStory = storyGroup?.[storyIndex];
-  const openPost = (item: SocialItem) => router.push({ pathname: '/post/[id]', params: { id: item.id } });
+  const openPost = (item: SocialItem) => {
+    if (!preview.open({ type: 'social', id: item.id })) router.push({ pathname: '/post/[id]', params: { id: item.id } });
+  };
   const openProfile = (item: SocialItem) => item.placeId
     ? router.push({ pathname: '/company/[id]', params: { id: item.placeId } })
     : router.push({ pathname: '/profile/[id]', params: { id: item.authorId } });
@@ -83,7 +93,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
   };
   const like = async (item: SocialItem) => {
     if (busy) return; setBusy(true); setMessage('');
-    try { const updated = await setSocialLike(item.id, !item.liked); setItems(current => current.map(value => value.id === item.id ? updated : value)); }
+    try { const updated = await setSocialLike(item.id, !item.liked); setItems(current => current.map(value => value.id === item.id ? updated : value)); if (preview.selected?.type === 'social' && preview.selected.id === item.id) preview.refresh(); }
     catch { setMessage('Не удалось изменить отметку. Попробуйте ещё раз.'); }
     finally { setBusy(false); }
   };
@@ -101,6 +111,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
       setComments(await getSocialComments(commentItem.id));
       setCommentText(''); setCommentRequest(null);
       setItems(current => current.map(item => item.id === commentItem.id ? { ...item, comments: item.comments + 1 } : item));
+      if (preview.selected?.type === 'social' && preview.selected.id === commentItem.id) preview.refresh();
     } catch { setMessage('Не удалось отправить комментарий. Повторите отправку.'); }
     finally { setBusy(false); }
   };
@@ -144,6 +155,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
           <Pressable accessibilityRole="button" accessibilityLabel="Комментарии" onPress={() => void openComments(item)} style={styles.action}><Ionicons name="chatbubble-outline" color={palette.forest} size={20}/><Text style={styles.actionText}>{item.comments}</Text></Pressable>
           {!item.originalId && session.role === 'user' && <Pressable accessibilityRole="button" accessibilityLabel="Репост" disabled={busy} onPress={() => void repost(item)} style={styles.action}><Ionicons name="repeat-outline" color={palette.forest} size={23}/><Text style={styles.actionText}>Репост</Text></Pressable>}
         </View><SketchFrame />
+        {preview.selected?.type === 'social' && preview.selected.id === item.id && <View pointerEvents="none" style={styles.selectedShade} />}
       </View>)}
       {!!message && !commentItem && <Text accessibilityRole="alert" style={styles.hint}>{message}</Text>}
     </View>}
@@ -159,6 +171,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
   </View>;
 }
 const baseStyles=StyleSheet.create({
+  selectedShade:{...StyleSheet.absoluteFill,borderRadius:20,backgroundColor:'rgba(20, 25, 14, 0.16)'},
   postContent:{gap:9},disabled:{opacity:0.55},videoPreview:{width:'100%',height:180,borderRadius:14,backgroundColor:palette.forest,alignItems:'center',justifyContent:'center',gap:10},videoLabel:{color:palette.cream,fontSize:15,fontWeight:'700'},
   sectionHeading:{paddingTop:18,paddingBottom:10},heading:{color:palette.forest,fontSize:17,fontWeight:'700'},storyList:{gap:13},storyItem:{width:70,alignItems:'center',gap:6},myStory:{width:62,height:62,borderRadius:31,alignItems:'center',justifyContent:'center',backgroundColor:'#E9E8C6'},ring:{width:62,height:62,borderRadius:31,borderWidth:2,borderColor:palette.terracotta,padding:3,alignItems:'center',justifyContent:'center',backgroundColor:palette.surface},avatar:{width:'100%',height:'100%',borderRadius:28},initial:{color:palette.olive,fontSize:24,fontWeight:'700'},storyName:{color:palette.forest,fontSize:11,textAlign:'center'},hint:{color:palette.muted,fontSize:12,lineHeight:18,marginTop:8},error:{color:'#A23524',fontSize:13,lineHeight:18,marginTop:8},postsSection:{gap:12,marginTop:20},post:{backgroundColor:palette.surface,borderRadius:20,padding:16,gap:7,position:'relative'},author:{fontSize:14,fontWeight:'700',color:palette.forest},date:{fontSize:11,color:palette.muted},body:{fontSize:15,lineHeight:22,color:palette.forest},postImage:{width:'100%',height:220,borderRadius:14},quote:{padding:12,borderRadius:12,backgroundColor:palette.cream,gap:4},actions:{flexDirection:'row',alignItems:'center',gap:20,flexWrap:'wrap',paddingTop:6},action:{flexDirection:'row',alignItems:'center',gap:6,paddingVertical:6},actionText:{color:palette.forest,fontSize:13},overlay:{flex:1,backgroundColor:'rgba(20,29,12,0.7)',justifyContent:'center',padding:20},modal:{backgroundColor:palette.cream,borderRadius:24,padding:20,gap:12,width:'100%',maxWidth:400,maxHeight:'85%',alignSelf:'center'},storyImage:{width:'100%',height:260,borderRadius:12},link:{color:palette.olive,fontWeight:'700'},close:{alignItems:'center',padding:8},commentList:{maxHeight:260},comment:{gap:4,paddingVertical:8,borderBottomWidth:1,borderColor:palette.border},input:{backgroundColor:palette.surface,borderColor:palette.border,borderWidth:1,borderRadius:12,padding:12,color:palette.forest,minHeight:48},submit:{backgroundColor:palette.olive,borderRadius:14,padding:12,alignItems:'center'},submitText:{color:palette.cream,fontWeight:'700'},
 });

@@ -319,7 +319,7 @@ export default function MapScreen() {
         onSelect={select} onError={canvasError} onSubmit={submitPoint} onOpenPlace={openPlace}
         onReady={onMapReady} onRouteCameraMove={releaseCamera} />
     </View>
-    <View pointerEvents="box-none" style={[styles.overlay, {
+    <View {...webData({ mapOverlay: 'true' })} pointerEvents="box-none" style={[styles.overlay, {
       paddingTop: insets.top + floatingNavigationInset,
       paddingBottom: floatingNavigationHeight(insets.bottom),
     }]}>

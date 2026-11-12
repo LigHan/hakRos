@@ -4,6 +4,7 @@ import { Animated, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, 
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { palette, useAppStyles } from '@/lib/app-appearance';
+import { webData } from '@/lib/web-data';
 
 const webHandleStyle = { touchAction: 'none' } as ViewStyle;
 
@@ -87,8 +88,8 @@ export function MapBottomSheet({ title, children }: { title: string; children: R
   );
 
   return (
-    <GestureHandlerRootView style={[styles.container, collapsed && styles.peek]}>
-      <Animated.View style={[styles.sheet, { transform: [{ translateY: offset }] }]}>
+    <GestureHandlerRootView {...webData({ mapSheet: 'true' })} style={[styles.container, collapsed && styles.peek]}>
+      <Animated.View {...webData({ mapSheetBody: 'true' })} style={[styles.sheet, { transform: [{ translateY: offset }] }]}>
         {Platform.OS === 'web' ? handle : <GestureDetector gesture={pan}>{handle}</GestureDetector>}
         {!collapsed && (
           <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

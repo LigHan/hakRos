@@ -1,7 +1,8 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
 import { useAppStyles } from '@/lib/app-appearance';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { findPeople, getConnections, updateFriend, type Connections, type Person } from '@/lib/connections';
 import { ApiError } from '@/lib/statistics';

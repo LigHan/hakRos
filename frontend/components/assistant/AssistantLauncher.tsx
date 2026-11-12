@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
-  ActivityIndicator, Animated, BackHandler, Image, KeyboardAvoidingView, PanResponder, Platform, Pressable,
+  ActivityIndicator, Animated, BackHandler, Image, PanResponder, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type ViewProps, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { API_URL } from '@/lib/statistics';
 import { getUserSession } from '@/lib/user-session';
 import { triggerMapRoute } from '@/lib/map-search';
 import { floatingNavigationHeight } from '@/lib/floating-navigation-layout';
+import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { webData } from '@/lib/web-data';
 
 type PlaceCard = { placeId: string; name: string; address: string; image: string | null; description: string; reason: string; price: number | null; pricing?: { entryType: 'unknown' | 'free' | 'paid'; entryPrice: number | null; spendMin: number | null; spendMax: number | null }; budgetMatch?: 'fits' | 'unknown'; durationMinutes: number | null; actions: string[] };
@@ -180,6 +181,7 @@ export function MascotIcon({ size = 42 }: { size?: number }) {
 
 export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
   const insets = useSafeAreaInsets();
+  const keyboardInset = useKeyboardInset();
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -310,8 +312,8 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
         </Animated.View>
       </View>
 
-      {open && <View pointerEvents="box-none" style={[styles.chatLayer, { bottom: floatingNavigationHeight(insets.bottom) }]}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalWrap}>
+      {open && <View pointerEvents="box-none" style={[styles.chatLayer, { bottom: Math.max(floatingNavigationHeight(insets.bottom), keyboardInset ? keyboardInset + 8 : 0) }]}>
+          <View style={styles.modalWrap}>
             <SafeAreaView edges={['bottom']} style={styles.sheet}>
               <View style={styles.handle} />
               <View style={styles.header}>
@@ -384,7 +386,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
               </View>
               <Text style={styles.footer}>Сообщения и последние реплики передаются GigaChat. Не отправляйте пароли и личные данные.</Text>
             </SafeAreaView>
-          </KeyboardAvoidingView>
+          </View>
       </View>}
     </>
   );

@@ -1,6 +1,7 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
 import { useEffect, useRef, useState } from 'react';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput } from 'react-native';
 import { databaseService } from '@/constants/content';
 import { createPlan, getPlan, updatePlan, type PlanInput } from '@/lib/leisure-plans';
 

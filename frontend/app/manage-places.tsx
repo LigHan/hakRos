@@ -1,9 +1,10 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
 import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat, type ImageManipulatorContext, type ImageRef } from 'expo-image-manipulator';
 import { launchImageLibraryAsync } from 'expo-image-picker';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, type TextInputProps } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View, type TextInputProps } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { webData } from '@/lib/web-data';
 

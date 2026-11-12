@@ -16,6 +16,7 @@ import { currentMapCoordinates, findAddresses, findRoute, placeSearchResult, typ
 import { registerMapSearchHandler } from '@/lib/map-search';
 import { api, ApiError, authorized } from '@/lib/statistics';
 import { useNearbyMapPosition } from '@/lib/use-nearby-map-position';
+import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { useRoutePlayback } from '@/lib/use-route-playback';
 import { getUserSession, type UserSession } from '@/lib/user-session';
 import { webData } from '@/lib/web-data';
@@ -28,6 +29,7 @@ const messageOf = (error: unknown) => error instanceof Error ? error.message : '
 export default function MapScreen() {
   const styles = useAppStyles(baseStyles);
   const insets = useSafeAreaInsets();
+  const keyboardInset = useKeyboardInset();
   const [searchFocused, setSearchFocused] = useState(false);
   const router = useRouter();
   const params = useLocalSearchParams<{ focusType?: string; focusId?: string }>();
@@ -367,7 +369,7 @@ export default function MapScreen() {
     </View>
     <View {...webData({ mapOverlay: 'true' })} pointerEvents="box-none" style={[styles.overlay, {
       paddingTop: insets.top + floatingNavigationInset,
-      paddingBottom: floatingNavigationHeight(insets.bottom),
+      paddingBottom: Math.max(floatingNavigationHeight(insets.bottom), keyboardInset ? keyboardInset + 8 : 0),
     }]}>
       <View style={styles.headerCard}>
         <Ionicons name="map" size={20} color={palette.olive} />

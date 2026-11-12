@@ -1,3 +1,4 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
 import { useAppStyles, useAppearance } from '@/lib/app-appearance';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -6,9 +7,7 @@ import {
   Alert,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -101,11 +100,7 @@ export default function AuthScreen() {
           headerBackTitle: 'Назад',
         }}
       />
-      <KeyboardAvoidingView
-        {...webData({ hakrosFocus: 'login' })}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.root}
-      >
+      <View {...webData({ hakrosFocus: 'login' })} style={styles.root}>
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
@@ -249,7 +244,7 @@ export default function AuthScreen() {
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </>
   );
 }

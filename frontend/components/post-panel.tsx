@@ -1,29 +1,31 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect } from 'react';
-import { BackHandler, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlacePostDetail } from '@/components/place-post-detail';
 import { SocialPostDetail } from '@/components/social-post-detail';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { floatingNavigationHeight } from '@/lib/floating-navigation-layout';
+import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 
 export type OpenPost = { kind: 'place' | 'social'; id: string };
 export function PostPanel({ post, onClose }: { post: OpenPost; onClose: () => void }) {
   const styles = useAppStyles(baseStyles);
   const insets = useSafeAreaInsets();
+  const keyboardInset = useKeyboardInset();
   useEffect(() => {
     const listener = BackHandler.addEventListener('hardwareBackPress', () => { onClose(); return true; });
     return () => listener.remove();
   }, [onClose]);
-  return <View style={[styles.overlay, { bottom: floatingNavigationHeight(insets.bottom) }]}>
+  return <View style={[styles.overlay, { bottom: Math.max(floatingNavigationHeight(insets.bottom), keyboardInset ? keyboardInset + 8 : 0) }]}>
     <Pressable accessibilityRole="button" accessibilityLabel="Закрыть публикацию" onPress={onClose} style={StyleSheet.absoluteFill} />
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.panel}>
+    <View style={styles.panel}>
       <View style={styles.panelHeader}>
         <Text style={styles.title}>{post.kind === 'place' ? 'Публикация места' : 'Публикация'}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="Закрыть" onPress={onClose} style={styles.close}><Ionicons name="close" size={24} color={palette.forest} /></Pressable>
       </View>
       {post.kind === 'place' ? <PlacePostDetail key={post.id} id={post.id} embedded onClose={onClose} /> : <SocialPostDetail key={post.id} id={post.id} embedded onClose={onClose} />}
-    </KeyboardAvoidingView>
+    </View>
   </View>;
 }
 const baseStyles = StyleSheet.create({

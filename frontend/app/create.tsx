@@ -1,10 +1,11 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Linking, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SocialMedia } from '@/components/social-media';
@@ -177,7 +178,7 @@ function Composer({ kind }: { kind: Kind }) {
   };
   const preview = mediaAsset?.uri || uploaded?.url;
 
-  return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+  return <View style={styles.page}>
     <Stack.Screen options={{ title: kind === 'post' ? 'Новая публикация' : 'Новая история', headerStyle: { backgroundColor: palette.cream }, headerTintColor: palette.forest }} />
     <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 140 + insets.bottom }]} keyboardShouldPersistTaps="handled">
       {storiesUnavailable ? <View style={styles.card}>
@@ -217,7 +218,7 @@ function Composer({ kind }: { kind: Kind }) {
         {!pending && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void saveDraft()} style={styles.secondary}><Text style={styles.secondaryText}>Сохранить текстовый черновик</Text></Pressable>}
       </View>}
     </ScrollView>
-  </KeyboardAvoidingView>;
+  </View>;
 }
 
 const baseStyles = StyleSheet.create({

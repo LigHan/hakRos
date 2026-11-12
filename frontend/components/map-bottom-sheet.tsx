@@ -1,6 +1,7 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View, type PressableProps, type ViewStyle } from 'react-native';
+import { Animated, Keyboard, Platform, Pressable, StyleSheet, Text, View, type PressableProps, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { palette, useAppStyles } from '@/lib/app-appearance';

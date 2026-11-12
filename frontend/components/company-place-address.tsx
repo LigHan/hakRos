@@ -1,6 +1,8 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
+import { useKeyboardInset } from '@/lib/use-keyboard-inset';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import MapCanvas from '@/components/MapCanvas';
@@ -96,6 +98,7 @@ function PlaceLocationPicker({ initialAddress, initialCoordinates, onCancel, onA
   onApply: (value: PlaceAddress) => void;
 }) {
   const styles = useAppStyles(baseStyles);
+  const keyboardInset = useKeyboardInset();
   const [address, setAddress] = useState(initialAddress);
   const [coordinates, setCoordinates] = useState(initialCoordinates);
   const [center, setCenter] = useState<MapState['center']>(initialCoordinates && { ...initialCoordinates, sequence: 1 });
@@ -154,7 +157,7 @@ function PlaceLocationPicker({ initialAddress, initialCoordinates, onCancel, onA
     <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
       <View {...webData({ hakrosFocus: 'address-picker' })} style={styles.backdrop}>
         <SafeAreaView style={styles.picker} accessibilityViewIsModal>
-          <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={[styles.flex, { paddingBottom: keyboardInset }]}>
             <View style={styles.pickerHeader}>
               <View style={styles.heading}>
                 <Text accessibilityRole="header" style={styles.title}>Место на карте</Text>
@@ -191,7 +194,7 @@ function PlaceLocationPicker({ initialAddress, initialCoordinates, onCancel, onA
                 <Text style={styles.applyText}>Применить адрес</Text>
               </Pressable>
             </ScrollView>
-          </KeyboardAvoidingView>
+          </View>
         </SafeAreaView>
       </View>
     </Modal>

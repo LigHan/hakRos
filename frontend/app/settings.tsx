@@ -1,9 +1,10 @@
+import { KeyboardAwareScrollView as ScrollView } from '@/components/keyboard-aware-scroll-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { launchImageLibraryAsync } from 'expo-image-picker';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { palette, useAppearance, useAppStyles, type AppearanceMode } from '@/lib/app-appearance';
 import { authorized } from '@/lib/statistics';

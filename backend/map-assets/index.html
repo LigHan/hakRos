@@ -5,14 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <link rel="stylesheet" href="/maplibre/maplibre-gl.css">
   <link rel="stylesheet" href="/map-assets/map-markers.css">
+  <link rel="stylesheet" href="/map-assets/route-playback.css">
   <script src="/maplibre/maplibre-gl.js"></script>
   <script src="/map-assets/boundary-clip.js"></script>
   <script src="/map-assets/russian-labels.js"></script>
   <script src="/map-assets/map-markers.js"></script>
+  <script src="/map-assets/route-playback.js"></script>
   <style>
-    html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#fefae0}
+    html,body,#map{height:100%;width:100%;margin:0}body{font-family:system-ui,sans-serif;background:#eef6fa}
     #status{position:absolute;top:12px;left:12px;right:12px;background:#fffced;color:#283618;padding:10px;border-radius:10px;z-index:2;display:none}
-    .maplibregl-ctrl-bottom-right{bottom:6px}.maplibregl-ctrl-attrib{font-size:11px}
+    .maplibregl-ctrl-top-right{top:40%;transform:translateY(-50%)}
+    .maplibregl-ctrl-top-right .maplibregl-ctrl{margin:0 14px 0 0}
+    .maplibregl-ctrl-group{background:#fffced;border:1px solid #d9d6b5;border-radius:10px}
+    .maplibregl-ctrl-group button{width:36px;height:36px}
+    .maplibregl-ctrl-bottom-right{top:calc(40% - 42px);bottom:auto;left:14px;right:auto;max-width:calc(100% - 74px);transform:translateY(-50%)}
+    .maplibregl-ctrl-bottom-right .maplibregl-ctrl{margin:0}
+    .maplibregl-ctrl-attrib{font-size:10px;line-height:15px}
+    @media not all and (forced-colors: active) {
+      :is(button,a,[role="button"],.maplibregl-canvas):focus-visible{outline:2px solid #52612d;outline-offset:-2px}
+    }
   </style>
 </head>
 <body><div id="map"></div><div id="status" role="alert"></div>
@@ -24,9 +35,37 @@
     else if (window.parent !== window) window.parent.postMessage(value, '*');
   };
   function error(message) { status.textContent = message; status.style.display = 'block'; notify({type:'error', message}); }
-  let map, renderMarkers, ready = false, state = {};
+  let map, renderMarkers, routePlayback, ready = false, state = {};
   let lastCenterSequence, lastRouteSequence;
   const emptyRoute = {type:'FeatureCollection', features:[]};
+
+  // Keep Liberty's building, boundary and zoom rules. Separate the road
+  // casings from their centres so streets remain legible at city scale.
+  const cityFills = {
+    water: {'fill-color':'#a2d5f5'},
+    park: {'fill-color':'#cae8ae','fill-outline-color':'#b8d69e'},
+    landcover_wood: {'fill-color':'#b4dda7'},
+    landcover_grass: {'fill-color':'#d5edbb'},
+    landuse_residential: {'fill-color':'#e7eef0'},
+  };
+
+  function cityPaint(layer) {
+    const {id, type} = layer;
+    if (type === 'background') return {'background-color':'#eef6fa'};
+    if (type === 'fill') return cityFills[id];
+    if (type === 'line') {
+      if (id.startsWith('waterway_')) return {'line-color':'#83c3ee'};
+      if (id === 'park_outline') return {'line-color':'#b8d69e'};
+      if (!/^(road|bridge|tunnel)_/.test(id) || id.includes('rail')) return;
+      const major = /motorway|trunk|primary|secondary|tertiary|link/.test(id);
+      if (id.endsWith('_casing')) return {'line-color':major ? '#c9a978' : '#aebfc9'};
+      if (id.includes('_path_')) return {'line-color':'#fdfefa'};
+      return {'line-color':major ? '#ffe5ae' : '#ffffff'};
+    }
+    if (type === 'symbol' && /^(highway-name-|poi_|water_name_)/.test(id)) {
+      return {'text-color':'#394b54','text-halo-color':'#fff','text-halo-width':1};
+    }
+  }
 
   function renderRoute() {
     const route = state.route;
@@ -55,11 +94,15 @@
   window.applyMapState = function(next) {
     state = next || {};
     if (!ready) return;
-    renderMarkers(state);
+    renderMarkers(state.routePlayback ? { ...state, routeStart: null } : state);
     const framedRoute = renderRoute();
+    routePlayback.update(state.route, state.routePlayback);
     if (state.center && state.center.sequence !== lastCenterSequence) {
       lastCenterSequence = state.center.sequence;
-      if (!framedRoute) map.flyTo({center:[state.center.longitude,state.center.latitude],zoom:15});
+      if (!framedRoute) {
+        routePlayback.releaseCamera();
+        map.flyTo({center:[state.center.longitude,state.center.latitude],zoom:15});
+      }
     }
   };
   window.addEventListener('message', event => {
@@ -151,21 +194,12 @@
       },
       attributionControl:{customAttribution:[
         '<a href="https://maplibre.org/" target="_blank" rel="noopener">MapLibre</a>',
-        '<a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">Маршруты OSRM · FOSSGIS</a>',
+        '<a href="https://routing.openstreetmap.de/about.html" target="_blank" rel="noopener">OSRM · FOSSGIS</a>',
         '<a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Исправить карту</a>',
       ]},
     });
     map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
     map.on('load', async () => {
-      for (const layer of map.getStyle().layers) {
-        const id = layer.id.toLowerCase();
-        try {
-          if (layer.type === 'background') map.setPaintProperty(layer.id,'background-color','#f2f6fb');
-          else if (layer.type === 'fill' && id.includes('water')) map.setPaintProperty(layer.id,'fill-color','#b8d5f4');
-          else if (layer.type === 'fill' && (id.includes('park') || id.includes('landcover'))) map.setPaintProperty(layer.id,'fill-color','#d7ebdf');
-          else if (layer.type === 'line' && id.includes('road')) map.setPaintProperty(layer.id,'line-color','#cbd9e9');
-        } catch (_) { /* Стили поставщика могут отличаться. */ }
-      }
       try { await applyRussianRegionalView(); status.style.display = 'none'; }
       catch (_) { error('Не удалось применить настройки границ. Проверьте соединение и обновите карту.'); }
       map.addSource('navigation-route', {type:'geojson', data:emptyRoute});
@@ -175,6 +209,7 @@
       map.addLayer({id:'navigation-route-line', type:'line', source:'navigation-route', layout:routeLayout,
         paint:{'line-color':'#606c38','line-width':6}});
       renderMarkers = window.createMapMarkers(map, notify);
+      routePlayback = window.createRoutePlayback(map, notify);
       ready = true;
       window.applyMapState(state);
       notify({type:'ready'});
@@ -188,8 +223,13 @@
       transformStyle: (_previous, style) => ({
         ...style,
         layers: style.layers.map(layer => {
-          if (layer.type !== 'symbol' || !RussianMapLabels.usesName(layer.layout?.['text-field'])) return layer;
-          return { ...layer, layout:{ ...layer.layout, 'text-field':RussianMapLabels.textField() } };
+          const paint = cityPaint(layer);
+          const localized = layer.type === 'symbol' && RussianMapLabels.usesName(layer.layout?.['text-field']);
+          return {
+            ...layer,
+            ...(paint && {paint:{...layer.paint,...paint}}),
+            ...(localized && {layout:{...layer.layout,'text-field':RussianMapLabels.textField()}}),
+          };
         }),
       }),
     });

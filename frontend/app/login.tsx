@@ -8,7 +8,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +19,7 @@ import {
 import { resolveAvatarUrl } from '@/lib/account-profile';
 import { api } from '@/lib/statistics';
 import { setUserSession, type UserSession } from '@/lib/user-session';
+import { webData } from '@/lib/web-data';
 
 const THEME = {
   primary: '#606C38',
@@ -102,6 +102,7 @@ export default function AuthScreen() {
         }}
       />
       <KeyboardAvoidingView
+        {...webData({ hakrosFocus: 'login' })}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.root}
       >
@@ -198,6 +199,7 @@ export default function AuthScreen() {
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Email</Text>
               <TextInput
+                accessibilityLabel="Электронная почта"
                 value={email}
                 onChangeText={setEmail}
                 placeholder="hello@company.ru"
@@ -211,6 +213,7 @@ export default function AuthScreen() {
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Пароль</Text>
               <TextInput
+                accessibilityLabel="Пароль"
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Введите пароль"
@@ -221,14 +224,8 @@ export default function AuthScreen() {
             </View>
 
             {authError ? <Text accessibilityRole="alert" style={{ color: '#b42318', marginBottom: 12 }}>{authError}</Text> : null}
-            {!isRegister && (
-              <TouchableOpacity style={styles.linkRow} onPress={() => router.push('/modal')}>
-                <Ionicons name="help-circle-outline" size={18} color={THEME.primary} />
-                <Text style={styles.linkText}>Забыли пароль?</Text>
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
+              accessibilityRole="button"
               style={[styles.primaryButton, (!canSubmit || loading) && styles.primaryButtonDisabled]}
               activeOpacity={0.85}
               onPress={handleSubmit}
@@ -239,30 +236,14 @@ export default function AuthScreen() {
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.separator}>
-              <View style={styles.line} />
-              <Text style={styles.separatorText}>или</Text>
-              <View style={styles.line} />
-            </View>
-
-            <View style={styles.socialRow}>
-              <Pressable style={styles.socialButton}>
-                <View style={styles.socialIcon}>
-                  <Text style={styles.socialLetter}>Я</Text>
-                </View>
-                <Text style={styles.socialText}>Yandex</Text>
-              </Pressable>
-              <Pressable style={styles.socialButton}>
-                <Ionicons name="logo-vk" size={20} color={THEME.accent} />
-                <Text style={styles.socialText}>VK</Text>
-              </Pressable>
-            </View>
-
             <View style={styles.switchRow}>
               <Text style={styles.switchLabel}>
                 {isRegister ? 'Уже есть аккаунт?' : 'Нет аккаунта?'}
               </Text>
-              <TouchableOpacity onPress={() => setMode(isRegister ? 'login' : 'register')}>
+              <TouchableOpacity accessibilityRole="button" onPress={() => {
+                setAuthError('');
+                setMode(isRegister ? 'login' : 'register');
+              }}>
                 <Text style={styles.switchLink}>{isRegister ? 'Войти' : 'Зарегистрироваться'}</Text>
               </TouchableOpacity>
             </View>
@@ -342,17 +323,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 15,
     color: THEME.accent,
   },
-  linkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-end',
-  },
-  linkText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: THEME.primary,
-  },
   primaryButton: {
     backgroundColor: THEME.primary,
     borderRadius: 18,
@@ -372,60 +342,9 @@ const baseStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  separator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: THEME.border,
-  },
-  separatorText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: THEME.muted,
-    textTransform: 'uppercase',
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  socialButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: THEME.border,
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8fbff',
-    justifyContent: 'center',
-  },
-  socialText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: THEME.accent,
-    textAlign: 'center',
-  },
-  socialIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(37, 99, 235, 0.18)',
-  },
-  socialLetter: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: THEME.accent,
-  },
   switchRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 6,
     marginTop: 4,

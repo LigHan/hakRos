@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PlaceCover } from '@/components/place-photo';
 import { SketchFrame } from '@/components/sketch-frame';
 import { SocialFeed } from '@/components/social-feed';
 import { databaseService, type Post, type Story } from '@/constants/content';
@@ -114,7 +115,7 @@ export default function RecommendationsScreen() {
           renderItem={({ item }) => (
             <View style={styles.post}>
               <Pressable accessibilityRole="button" accessibilityLabel={`Открыть публикацию: ${item.place}`} onPress={() => router.push({ pathname: '/place-post/[id]', params: { id: item.id } })} style={styles.photoWrap}>
-                <Image source={{ uri: item.image }} style={styles.photo} />
+                <PlaceCover place={item} style={styles.photo} />
                 <LinearGradient colors={['transparent', 'rgba(20, 25, 14, 0.78)']} style={styles.photoShade} />
                 <View style={styles.photoCaption}><Ionicons name="location" size={15} color="#fff" /><Text numberOfLines={1} style={styles.photoPlace}>{item.place}</Text><Text style={styles.photoRating}>★ <Text style={styles.photoRatingValue}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text></View>
               </Pressable>

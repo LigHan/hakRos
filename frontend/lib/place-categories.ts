@@ -26,3 +26,14 @@ export function matchesPlaceCategory(post: Post, category: string) {
   const tags = legacyCategoryTags[category] ?? [category];
   return post.tags.some(tag => tags.some(keyword => tag.toLowerCase().includes(keyword)));
 }
+
+function normalizeSearch(text: string) {
+  return text.normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+export function matchesPlaceQuery(post: Pick<Post, 'place' | 'user' | 'address' | 'bio' | 'tags'>, query: string) {
+  const terms = normalizeSearch(query);
+  if (!terms) return true;
+  const index = normalizeSearch([post.place, post.user, post.address, post.bio, ...post.tags].join(' '));
+  return terms.split(' ').every(term => index.includes(term));
+}

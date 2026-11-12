@@ -1,3 +1,5 @@
+import { CatalogStatus } from '@/components/catalog-status';
+import { PlaceCover } from '@/components/place-photo';
 import { SketchFrame } from '@/components/sketch-frame';
 import { useAppStyles } from '@/lib/app-appearance';
 import { track } from '@/lib/statistics';
@@ -12,6 +14,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -19,8 +22,8 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { databaseService, formatCompactNumber, type Post } from '@/constants/content';
 import {
@@ -31,13 +34,15 @@ import {
   toggleLike
 } from '@/lib/likes-favorites';
 import { triggerMapRoute, triggerMapSearch } from '@/lib/map-search';
-import { matchesPlaceCategory, placeCategories } from '@/lib/place-categories';
+import { matchesPlaceCategory, matchesPlaceQuery, placeCategories } from '@/lib/place-categories';
+import { webData } from '@/lib/web-data';
 
 type SearchPost = Post;
 
 export default function SearchScreen() {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
+  const { top } = useSafeAreaInsets();
   const searchInputRef = useRef<TextInputInstance>(null);
   const [fadeAnim] = useState(() => new Animated.Value(0));
 
@@ -48,21 +53,27 @@ export default function SearchScreen() {
   const [activePost, setActivePost] = useState<SearchPost | null>(null);
   const [isDetailVisible, setDetailVisible] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [dataLoaded, setDataLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [postLikes, setPostLikes] = useState<Record<string, boolean>>({});
   const [postFavorites, setPostFavorites] = useState<Record<string, boolean>>({});
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
 
   const loadData = useCallback(() => {
     return databaseService.getPosts()
-      .then(data => { setPostsData(data); setDataLoaded(true); })
-      .catch(error => console.error('Не удалось загрузить места', error))
+      .then(setPostsData)
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const reload = () => {
+    setLoading(true);
+    setLoadError(false);
+    void loadData();
+  };
 
   // Загружаем состояния лайков и избранного
   useEffect(() => {
@@ -152,42 +163,17 @@ export default function SearchScreen() {
     return success;
   };
 
-  const filterPosts = useCallback((data: SearchPost[], category: string, query: string) => {
-    const normalizedQuery = query.trim().toLowerCase();
-    return data.filter(post => {
-      if (!matchesPlaceCategory(post, category)) {
-        return false;
-      }
-
-      if (!normalizedQuery) {
-        return true;
-      }
-
-      const haystack = [
-        post.place,
-        post.user,
-        post.address,
-        post.bio || '',
-        ...(post.tags || [])
-      ]
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(normalizedQuery);
-    });
-  }, []);
-
   const searchResults = useMemo(
-    () => filterPosts(postsData, selectedCategory, searchQuery),
-    [postsData, selectedCategory, searchQuery, filterPosts]
+    () => postsData.filter(post => matchesPlaceCategory(post, selectedCategory) && matchesPlaceQuery(post, searchQuery)),
+    [postsData, selectedCategory, searchQuery]
   );
   const isSearching = searchQuery.trim().length > 0;
   const hasResults = searchResults.length > 0;
   useEffect(() => {
-    if (loading || !dataLoaded || !isSearching) return;
+    if (loading || loadError || !isSearching) return;
     const timer = setTimeout(() => { track('search'); if (!hasResults) track('search_no_results'); }, 800);
     return () => clearTimeout(timer);
-  }, [searchQuery, selectedCategory, loading, dataLoaded, isSearching, hasResults]);
+  }, [searchQuery, selectedCategory, loading, loadError, isSearching, hasResults]);
 
   useEffect(() => {
     if (!hasResults) {
@@ -209,7 +195,7 @@ export default function SearchScreen() {
 
   const clearSearch = () => {
     setSearchQuery('');
-    Keyboard.dismiss();
+    searchInputRef.current?.focus();
   };
 
   const handleCategorySelect = (categoryId: string) => {
@@ -246,10 +232,6 @@ export default function SearchScreen() {
     router.push('/login');
   };
 
-  const handleDownload = (id: string) => {
-    console.log(`download for ${id}`);
-  };
-
   const handleOpenProfile = (post: SearchPost) => {
     router.push({ pathname: '/company/[id]', params: { id: post.id } });
   };
@@ -260,7 +242,7 @@ export default function SearchScreen() {
       style={styles.post}
       onPress={() => handleOpenDetail(item)}
     >
-      <Image source={{ uri: item.image }} style={styles.image} />
+      <PlaceCover place={item} style={styles.image} />
       <View style={styles.info}>
         <View style={styles.authorRow}>
           <TouchableOpacity onPress={() => handleOpenProfile(item)} activeOpacity={0.8}>
@@ -282,7 +264,6 @@ export default function SearchScreen() {
             <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
           </View>
         </View>
-        <Text style={styles.userCaption}>от {item.user}</Text>
         <TouchableOpacity
           style={styles.addressRow}
           activeOpacity={0.85}
@@ -325,13 +306,6 @@ export default function SearchScreen() {
           >
             <Ionicons name="navigate-outline" size={24} color="#283618" />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleDownload(item.id)}
-            style={styles.actionButton}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="download-outline" size={24} color="#283618" />
-          </TouchableOpacity>
         </View>
         <TouchableOpacity
           onPress={() => handleFavorite(item.id)}
@@ -349,26 +323,18 @@ export default function SearchScreen() {
     </TouchableOpacity>
   );
 
-  if (loading) {
-    return (
-      <ThemedView style={styles.loadingContainer}>
-        <Ionicons name="search-outline" size={48} color="#606C38" />
-        <Text style={styles.loadingText}>Загрузка данных для поиска...</Text>
-      </ThemedView>
-    );
-  }
-
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.searchHeader}>
+    <ThemedView {...webData({ hakrosFocus: 'search' })} style={styles.container}>
+      <View style={[styles.searchHeader, { paddingTop: top + 16 }]}>
         <Text style={styles.pageTitle}>Поиск</Text>
         <Text style={styles.pageSubtitle}>Найдите место для новых впечатлений</Text>
-        <View style={[styles.searchContainer, searchActive && styles.searchContainerActive]}>
+        <View {...webData({ focusGroup: 'catalog-search' })} style={[styles.searchContainer, searchActive && styles.searchContainerActive]}>
           <Ionicons name="search" size={20} color="#475569" style={styles.searchIcon} />
           <TextInput
             ref={searchInputRef}
+            accessibilityLabel="Поиск мест"
             style={styles.searchInput}
-            placeholder="Поиск мест, событий, авторов..."
+            placeholder="Название, адрес или автор"
             placeholderTextColor="#6F7457"
             value={searchQuery}
             onChangeText={handleSearchChange}
@@ -378,7 +344,7 @@ export default function SearchScreen() {
             onSubmitEditing={Keyboard.dismiss}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={clearSearch} style={styles.clearButton} hitSlop={8}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Очистить поиск" onPress={clearSearch} style={styles.clearButton} hitSlop={8}>
               <Ionicons name="close-circle" size={20} color="#6F7457" />
             </TouchableOpacity>
           )}
@@ -417,20 +383,14 @@ export default function SearchScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           refreshing={loading}
-          onRefresh={() => {
-            setLoading(true);
-            void loadData();
-          }}
+          onRefresh={reload}
+          ListHeaderComponent={loadError && hasResults
+            ? <CatalogStatus loading={false} failed emptyMessage="" onRetry={reload} />
+            : undefined}
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={64} color="#c6c6c8" />
-              <ThemedText type="defaultSemiBold" style={styles.emptyTitle}>
-                Ничего не найдено
-              </ThemedText>
-              <ThemedText style={styles.emptyText}>
-                Попробуйте изменить запрос или выбрать другую категорию
-              </ThemedText>
-            </View>
+            <CatalogStatus loading={loading} failed={loadError} onRetry={reload}
+              emptyMessage={postsData.length ? 'По этому запросу и категории мест нет.' : 'В каталоге пока нет мест.'}
+              onReset={isSearching || selectedCategory !== 'all' ? () => { setSelectedCategory('all'); setSearchQuery(''); } : undefined} />
           }
         />
       </Animated.View>
@@ -472,98 +432,102 @@ export default function SearchScreen() {
       >
         <Pressable style={styles.detailOverlay} onPress={handleCloseDetail}>
           {activePost && (
-            <Pressable style={styles.detailCard} onPress={event => event.stopPropagation()}>
-              <Image source={{ uri: activePost.image }} style={styles.detailImage} />
-              <View style={styles.detailContent}>
-                <View style={styles.detailHeader}>
-                  <Text style={styles.detailTitle}>{activePost.place}</Text>
-                  <View style={styles.detailRating}>
-                    <Ionicons name="star" size={18} color="#BC6C25" />
-                    <Text style={styles.detailRatingText}>{activePost.rating.toFixed(1)}</Text>
-                  </View>
-                </View>
-                <Text style={styles.detailSubtitle}>{activePost.user}</Text>
-                <TouchableOpacity
-                  style={styles.detailAddressRow}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    handleCloseDetail();
-                    openInMap(activePost);
-                  }}
-                >
-                  <Ionicons name="location-outline" size={18} color="#606C38" />
-                  <Text style={styles.detailAddressText}>{activePost.address}</Text>
-                </TouchableOpacity>
-                <View style={styles.detailTags}>
-                  {activePost.tags?.map(tag => (
-                    <View key={`${activePost.id}-detail-${tag}`} style={styles.detailTagChip}>
-                      <Text style={styles.detailTagText}>#{tag}</Text>
+            <Pressable {...webData({ hakrosFocus: 'place-preview' })} style={styles.detailCard} onPress={event => event.stopPropagation()}>
+              <ScrollView>
+                <PlaceCover place={activePost} style={styles.detailImage} />
+                <View style={styles.detailContent}>
+                  <View style={styles.detailHeader}>
+                    <Text style={styles.detailTitle}>{activePost.place}</Text>
+                    <View style={styles.detailRating}>
+                      <Ionicons name="star" size={18} color="#BC6C25" />
+                      <Text style={styles.detailRatingText}>{activePost.rating.toFixed(1)}</Text>
                     </View>
-                  ))}
+                  </View>
+                  <Text style={styles.detailSubtitle}>{activePost.user}</Text>
+                  <TouchableOpacity
+                    style={styles.detailAddressRow}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      handleCloseDetail();
+                      openInMap(activePost);
+                    }}
+                  >
+                    <Ionicons name="location-outline" size={18} color="#606C38" />
+                    <Text style={styles.detailAddressText}>{activePost.address}</Text>
+                  </TouchableOpacity>
+                  <View style={styles.detailTags}>
+                    {activePost.tags?.map(tag => (
+                      <View key={`${activePost.id}-detail-${tag}`} style={styles.detailTagChip}>
+                        <Text style={styles.detailTagText}>#{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.detailDescription}>
+                    {activePost.bio || 'Описание пока не добавлено.'}
+                  </Text>
+                  <View style={styles.detailMetaRow}>
+                    <TouchableOpacity
+                      style={styles.detailMeta}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        if (!activePost) return;
+                        handleCloseDetail();
+                        openInMap(activePost);
+                      }}
+                    >
+                      <Ionicons name="map-outline" size={18} color="#283618" />
+                      <Text style={styles.detailMetaText}>На карте</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.detailMeta}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        if (!activePost) return;
+                        handleCloseDetail();
+                        buildRoute(activePost);
+                      }}
+                    >
+                      <Ionicons name="navigate-outline" size={18} color="#283618" />
+                      <Text style={styles.detailMetaText}>Маршрут</Text>
+                    </TouchableOpacity>
+                    <View style={styles.detailMeta}>
+                      <Ionicons
+                        name={postLikes[activePost.id] ? "heart" : "heart-outline"}
+                        size={18}
+                        color={postLikes[activePost.id] ? "#BC6C25" : "#BC6C25"}
+                      />
+                      <Text style={styles.detailMetaText}>{`${formatCompactNumber(activePost.likes)} отметок`}</Text>
+                    </View>
+                  </View>
                 </View>
-                <Text style={styles.detailDescription}>
-                  {activePost.reviews?.[0]?.comment ??
-                    'Здесь вы найдете лучшие впечатления города: маршруты, атмосферные пространства и события рядом.'}
-                </Text>
-                <View style={styles.detailMetaRow}>
+                <View style={styles.detailUserBar}>
                   <TouchableOpacity
-                    style={styles.detailMeta}
+                    style={styles.detailUserInfo}
                     activeOpacity={0.85}
-                    onPress={() => {
-                      if (!activePost) return;
-                      handleCloseDetail();
-                      triggerMapSearch(activePost.address || activePost.place, activePost.id);
-                    }}
+                    onPress={() => handleOpenProfile(activePost)}
                   >
-                    <Ionicons name="map-outline" size={18} color="#283618" />
-                    <Text style={styles.detailMetaText}>На карте</Text>
+                    <Image source={{ uri: activePost.userAvatar }} style={styles.detailUserAvatar} />
+                    <View style={styles.detailUserText}>
+                      <Text style={styles.detailUserName}>{activePost.user}</Text>
+                      <Text style={styles.detailUserCaption}>Автор публикации</Text>
+                    </View>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.detailMeta}
+                    onPress={() => handleFavorite(activePost.id)}
+                    style={[styles.detailFavoriteButton, postFavorites[activePost.id] && styles.detailFavoriteButtonActive]}
                     activeOpacity={0.85}
-                    onPress={() => {
-                      if (!activePost) return;
-                      handleCloseDetail();
-                      buildRoute(activePost);
-                    }}
                   >
-                    <Ionicons name="navigate-outline" size={18} color="#283618" />
-                    <Text style={styles.detailMetaText}>Маршрут</Text>
-                  </TouchableOpacity>
-                  <View style={styles.detailMeta}>
                     <Ionicons
-                      name={postLikes[activePost.id] ? "heart" : "heart-outline"}
-                      size={18}
-                      color={postLikes[activePost.id] ? "#BC6C25" : "#BC6C25"}
+                      name={postFavorites[activePost.id] ? "bookmark" : "bookmark-outline"}
+                      size={22}
+                      color={postFavorites[activePost.id] ? "#606C38" : "#6F7457"}
                     />
-                    <Text style={styles.detailMetaText}>{`${formatCompactNumber(activePost.likes)} отметок`}</Text>
-                  </View>
+                  </TouchableOpacity>
                 </View>
-              </View>
-              <View style={styles.detailUserBar}>
-                <TouchableOpacity
-                  style={styles.detailUserInfo}
-                  activeOpacity={0.85}
-                  onPress={() => handleOpenProfile(activePost)}
-                >
-                  <Image source={{ uri: activePost.userAvatar }} style={styles.detailUserAvatar} />
-                  <View style={styles.detailUserText}>
-                    <Text style={styles.detailUserName}>{activePost.user}</Text>
-                    <Text style={styles.detailUserCaption}>Автор публикации</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleFavorite(activePost.id)}
-                  style={[styles.detailFavoriteButton, postFavorites[activePost.id] && styles.detailFavoriteButtonActive]}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons
-                    name={postFavorites[activePost.id] ? "bookmark" : "bookmark-outline"}
-                    size={22}
-                    color={postFavorites[activePost.id] ? "#606C38" : "#6F7457"}
-                  />
-                </TouchableOpacity>
-              </View>
+              </ScrollView>
+              <Pressable accessibilityRole="button" accessibilityLabel="Закрыть карточку" onPress={handleCloseDetail} style={styles.detailClose}>
+                <Ionicons name="close" size={22} color="#283618" />
+              </Pressable>
             </Pressable>
           )}
         </Pressable>
@@ -578,19 +542,6 @@ const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6F7457',
-    textAlign: 'center',
   },
   searchHeader: {
     paddingHorizontal: 20,
@@ -615,15 +566,16 @@ const baseStyles = StyleSheet.create({
     gap: 12,
   },
   searchContainerActive: {
-    backgroundColor: '#ffffff',
+    borderColor: '#606C38',
   },
   searchIcon: {
     marginRight: 4,
   },
   searchInput: {
     flex: 1,
+    minWidth: 0,
     fontSize: 16,
-    height: '100%',
+    minHeight: 24,
     color: '#283618',
   },
   clearButton: {
@@ -676,7 +628,7 @@ const baseStyles = StyleSheet.create({
   },
   image: {
     width: '100%',
-    height: 220,
+    aspectRatio: 1.8,
   },
   info: {
     padding: 16,
@@ -729,10 +681,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#BC6C25',
-  },
-  userCaption: {
-    color: '#777',
-    marginTop: 4,
   },
   addressRow: {
     flexDirection: 'row',
@@ -795,24 +743,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    opacity: 0.7,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
   placeholderWrapper: {
     ...StyleSheet.absoluteFill,
     justifyContent: 'center',
@@ -854,6 +784,7 @@ const baseStyles = StyleSheet.create({
   detailCard: {
     width: '100%',
     maxWidth: 380,
+    maxHeight: '100%',
     borderRadius: 28,
     overflow: 'hidden',
     backgroundColor: '#f8fafc',
@@ -863,9 +794,10 @@ const baseStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 18 },
     elevation: 20,
   },
+  detailClose: { position: 'absolute', right: 12, top: 12, width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFCED', alignItems: 'center', justifyContent: 'center' },
   detailImage: {
     width: '100%',
-    height: 260,
+    aspectRatio: 1.6,
   },
   detailContent: {
     paddingHorizontal: 24,

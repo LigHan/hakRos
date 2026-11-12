@@ -101,10 +101,10 @@ export function MapBottomSheet({ title, children }: { title: string; children: R
 }
 
 const baseStyles = StyleSheet.create({
-  container: { marginTop: 'auto', maxHeight: '45%', minHeight: 44, overflow: 'hidden', borderRadius: 18 },
+  container: { marginTop: 'auto', maxHeight: '54%', minHeight: 44, overflow: 'hidden', borderTopLeftRadius: 18, borderTopRightRadius: 18 },
   peek: { overflow: 'visible' },
-  sheet: { flexShrink: 1, backgroundColor: 'rgba(254,250,224,0.96)', borderRadius: 18 },
-  handle: { minHeight: 44, alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 42 },
+  sheet: { flexShrink: 1, backgroundColor: palette.surface, borderTopLeftRadius: 18, borderTopRightRadius: 18, borderWidth: 1, borderBottomWidth: 0, borderColor: palette.border },
+  handle: { minHeight: 44, alignItems: 'center', justifyContent: 'center', gap: 4, paddingHorizontal: 54 },
   pressed: { backgroundColor: 'rgba(96,108,56,0.08)' },
   grip: { width: 36, height: 4, borderRadius: 2, backgroundColor: palette.muted, opacity: 0.65 },
   peekTitle: { color: palette.forest, fontSize: 13, fontWeight: '600' },

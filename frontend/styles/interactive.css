@@ -1,0 +1,26 @@
+@media not all and (forced-colors: active) {
+  [data-hakros-focus] :is(input:not([type="file"]), textarea, select):focus,
+  [data-hakros-focus] :is(button, a[href], [role="button"], [role="tab"]):focus-visible {
+    outline: 2px solid #52612d;
+    outline-offset: 2px;
+  }
+
+  [data-hakros-focus] :is(input, textarea, select):focus {
+    outline-offset: -2px;
+  }
+
+  [data-hakros-focus] [data-focus-group]:focus-within {
+    border-color: #52612d;
+    box-shadow: inset 0 0 0 1px #52612d;
+  }
+
+  [data-hakros-focus] [data-focus-group] input:focus {
+    outline: none;
+  }
+}
+
+@media (hover: hover) and (forced-colors: none) {
+  [data-hakros-focus] [data-focus-group]:hover:not(:focus-within) {
+    box-shadow: inset 0 0 0 1px #929972;
+  }
+}

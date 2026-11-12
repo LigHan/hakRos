@@ -5,6 +5,7 @@ import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, type TextInputProps } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { webData } from '@/lib/web-data';
 
 import { CompanyPlaceAddress } from '@/components/company-place-address';
 import { PlaceHoursEditor } from '@/components/place-hours-editor';
@@ -217,7 +218,7 @@ export default function ManagePlacesScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <View {...webData({ hakrosFocus: 'company' })} style={styles.screen}>
       <Stack.Screen options={{
         title: draft ? (draft.id ? 'Редактирование заведения' : 'Новое заведение') : 'Мои заведения',
         headerBackTitle: 'Профиль',

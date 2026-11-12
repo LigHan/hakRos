@@ -60,7 +60,7 @@ export default function AdminPage() {
       setPlaces(nextPlaces); setUsers(nextUsers); setStats(nextStats); setMapPlaces(nextMapPlaces);
       return true;
     } catch (e) {
-      setPlaces([]); setUsers([]); setStats(null);
+      setPlaces([]); setUsers([]); setMapPlaces([]); setStats(null);
       setNeedsLogin(e instanceof ApiError && e.status === 401);
       setError(e instanceof Error ? e.message : 'Не удалось загрузить данные');
       return false;
@@ -99,6 +99,10 @@ export default function AdminPage() {
   const matches = (value: string) => value.toLowerCase().includes(query.trim().toLowerCase());
   const filteredPlaces = places.filter(p => matches(`${p.place} ${p.address || ''} ${p.category || ''}`));
   const filteredUsers = users.filter(u => matches(`${u.name} ${u.surname || ''} ${u.email}`));
+  const linkedPointIds = new Map<string, string>();
+  for (const point of mapPlaces) {
+    if (point.postId) linkedPointIds.set(point.postId, point.id);
+  }
   const title = section === 'overview' ? 'Обзор' : section === 'places' ? 'Места и публикации' : 'Пользователи';
 
   if (Platform.OS !== 'web') return <Redirect href="/profile" />;
@@ -132,16 +136,29 @@ export default function AdminPage() {
         </>}
         {!loading && section !== 'overview' && <View style={styles.panel}>
           <View style={styles.tableTop}><View><Text style={styles.heading}>{title}</Text><Text style={styles.muted}>Всего записей: {section === 'places' ? places.length : users.length}</Text></View><TextInput accessibilityLabel="Поиск" placeholder="Поиск..." placeholderTextColor="#6F7457" value={query} onChangeText={setQuery} style={styles.search} /></View>
-          {section === 'places' && filteredPlaces.map(item => <View key={item.id} style={styles.row}>
-            {placeId === item.id ? <View style={styles.form}>
-              <Field label="Название" value={placeForm.place} onChange={value => setPlaceForm({ ...placeForm, place: value })} />
-              <Field label="Описание" value={placeForm.bio} onChange={value => setPlaceForm({ ...placeForm, bio: value })} multiline />
-              <Field label="Адрес" value={placeForm.address} onChange={value => setPlaceForm({ ...placeForm, address: value })} />
-              <Text style={styles.label}>Категория</Text><View style={styles.chips}><Action label="Не указана" active={!placeForm.category} onPress={() => setPlaceForm({ ...placeForm, category: '' })} />{placeCategories.filter(c => c.id !== 'all').map(c => <Action key={c.id} label={c.name} active={placeForm.category === c.id} onPress={() => setPlaceForm({ ...placeForm, category: c.id })} />)}</View>
-              {placeForm.category && !placeCategories.some(c => c.id === placeForm.category) ? <Text style={styles.muted}>Текущая категория: {placeForm.category}</Text> : null}
-              <View style={styles.chips}><Action label={saving ? 'Сохранение…' : 'Сохранить'} active disabled={saving} onPress={() => void save()} /><Action label="Отмена" disabled={saving} onPress={() => setPlaceId(null)} /></View>
-            </View> : <><View style={styles.rowMain}><Text style={styles.bodyText}>{item.place}</Text><Text style={styles.muted}>{item.address || 'Адрес не указан'} · {placeCategories.find(c => c.id === item.category)?.name || item.category || 'Без категории'}</Text></View><Action label="Проверить на карте" onPress={() => router.push({ pathname: '/map', params: { focusType: 'post', focusId: item.id } })} /><Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setPlaceId(item.id); setPlaceForm({ place: item.place, bio: item.bio || '', address: item.address || '', category: item.category || '' }); }} /></>}
-          </View>)}
+          {section === 'places' && filteredPlaces.map(item => {
+            const linkedPointId = linkedPointIds.get(item.id);
+            return (
+              <View key={item.id} style={styles.row}>
+                {placeId === item.id ? <View style={styles.form}>
+                  <Field label="Название" value={placeForm.place} onChange={value => setPlaceForm({ ...placeForm, place: value })} />
+                  <Field label="Описание" value={placeForm.bio} onChange={value => setPlaceForm({ ...placeForm, bio: value })} multiline />
+                  <Field label="Адрес" value={placeForm.address} onChange={value => setPlaceForm({ ...placeForm, address: value })} />
+                  <Text style={styles.label}>Категория</Text><View style={styles.chips}><Action label="Не указана" active={!placeForm.category} onPress={() => setPlaceForm({ ...placeForm, category: '' })} />{placeCategories.filter(c => c.id !== 'all').map(c => <Action key={c.id} label={c.name} active={placeForm.category === c.id} onPress={() => setPlaceForm({ ...placeForm, category: c.id })} />)}</View>
+                  {placeForm.category && !placeCategories.some(c => c.id === placeForm.category) ? <Text style={styles.muted}>Текущая категория: {placeForm.category}</Text> : null}
+                  <View style={styles.chips}><Action label={saving ? 'Сохранение…' : 'Сохранить'} active disabled={saving} onPress={() => void save()} /><Action label="Отмена" disabled={saving} onPress={() => setPlaceId(null)} /></View>
+                </View> : <>
+                  <View style={styles.rowMain}>
+                    <Text style={styles.bodyText}>{item.place}</Text>
+                    <Text style={styles.muted}>{item.address || 'Адрес не указан'} · {placeCategories.find(c => c.id === item.category)?.name || item.category || 'Без категории'}</Text>
+                    {!linkedPointId && <Text style={styles.muted}>Нет метки на карте</Text>}
+                  </View>
+                  {linkedPointId && <Action label="Показать на карте" onPress={() => router.push({ pathname: '/map', params: { focusType: 'point', focusId: linkedPointId } })} />}
+                  <Action label="Редактировать" onPress={() => { setError(''); setNotice(''); setPlaceId(item.id); setPlaceForm({ place: item.place, bio: item.bio || '', address: item.address || '', category: item.category || '' }); }} />
+                </>}
+              </View>
+            );
+          })}
           {section === 'users' && filteredUsers.map(item => <View key={item.id} style={styles.row}>
             {userId === item.id ? <View style={styles.form}>
               <Field label="Имя" value={userForm.name} onChange={value => setUserForm({ ...userForm, name: value })} /><Field label="Фамилия" value={userForm.surname} onChange={value => setUserForm({ ...userForm, surname: value })} /><Field label="Email" value={userForm.email} onChange={value => setUserForm({ ...userForm, email: value })} />

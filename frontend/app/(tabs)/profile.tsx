@@ -20,6 +20,7 @@ import { getCompanyPlaces } from '@/lib/company-places';
 import { getAccountProfile } from '@/lib/account-profile';
 import { getSocialFeed, type SocialItem } from '@/lib/social';
 import { ApiError } from '@/lib/statistics';
+import { PlaceCover } from '@/components/place-photo';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SocialMedia } from '@/components/social-media';
@@ -32,19 +33,6 @@ import {
   getUserSession,
   type UserSession,
 } from '@/lib/user-session';
-
-// Visual reference data belongs only to the dedicated local demo account.
-const demoProfile = {
-  name: 'Мария Лебедева',
-  subtitle: 'Студентка МГУ',
-  status: 'Ищу новые места после пар ✨',
-  avatar: 'https://images.unsplash.com/photo-1747671688812-76d7bca21f34?auto=format&fit=crop&w=300&q=80',
-  places: [
-    { name: 'Кофейня «Клевер»', rating: '4,8', tag: 'Кофейни', saved: true, image: 'https://images.unsplash.com/photo-1777451441095-c7ef2f875929?auto=format&fit=crop&w=320&q=80' },
-    { name: 'Скалодром «Высота»', rating: '4,8', tag: 'Спорт', saved: false, image: 'https://images.unsplash.com/photo-1756821725793-c90c88407c59?auto=format&fit=crop&w=320&q=80' },
-    { name: 'Музей современного искусства', rating: '4,7', tag: 'Выставки', saved: true, image: 'https://images.unsplash.com/photo-1635172562604-3ba8826afc34?auto=format&fit=crop&w=320&q=80' },
-  ],
-};
 
 export default function ProfileScreen() {
   const styles = useAppStyles(baseStyles);
@@ -163,7 +151,6 @@ export default function ProfileScreen() {
   );
 
   const isCompany = session?.accountType === 'company';
-  const isDemoProfile = session?.email === 'demo-ef9e4f@hakros.local';
 
   // Используем данные для получения постов
   const favorites = useMemo(
@@ -200,7 +187,6 @@ export default function ProfileScreen() {
       ];
     }
 
-    if (isDemoProfile) return [{ label: 'постов', value: '48' }, { label: 'друзей', value: '132' }, { label: 'сохранённых', value: '27' }];
     return [
       { label: 'постов', value: formatNumber(ownSocialItems.filter(item => item.kind === 'post').length) },
       { label: 'друзей', value: connections ? formatNumber(connections.friends.length) : '—' },
@@ -213,7 +199,6 @@ export default function ProfileScreen() {
     connections,
     favoriteCount,
     isCompany,
-    isDemoProfile,
     ownSocialItems
   ]);
 
@@ -281,8 +266,7 @@ export default function ProfileScreen() {
               )}
             </View>
             <View style={styles.profileIdentity}>
-              <ThemedText type="title" style={styles.displayName}>{isDemoProfile ? demoProfile.name : `${session.name}${session.surname && !isCompany ? ` ${session.surname}` : ''}`}</ThemedText>
-              {isDemoProfile && <Text style={styles.profileSubtitle}>{demoProfile.subtitle}</Text>}
+              <ThemedText type="title" style={styles.displayName}>{session.name}{session.surname && !isCompany ? ` ${session.surname}` : ''}</ThemedText>
               {!!session.bio && <Text style={styles.profileBio}>{session.bio}</Text>}
               {session.role === 'user' && <View style={styles.privacyTag}><Ionicons name={session.isPrivate !== false ? 'lock-closed-outline' : 'globe-outline'} size={14} color="#606C38" /><Text style={styles.privacyText}>{session.isPrivate !== false ? 'Приватный профиль' : 'Открытый профиль'}</Text></View>}
             </View>
@@ -330,7 +314,7 @@ export default function ProfileScreen() {
                     id: item.id,
                     title: item.place,
                     subtitle: item.address || 'Адрес не указан',
-                    image: item.image,
+                    place: item,
                   }))}
                   onPress={handleOpenCompany}
                 />
@@ -379,13 +363,9 @@ export default function ProfileScreen() {
               ))}
             </View>
             {profileTab === 'places' ? <View style={styles.placeSection}>
-              <View style={styles.placeHeading}><Ionicons name="location-outline" size={21} color="#283618" /><Text style={styles.placeHeadingText}>{isDemoProfile ? 'Посещённые места' : 'Сохранённые места'}</Text><Ionicons name="chevron-forward" size={19} color="#283618" /></View>
-              {isDemoProfile ? demoProfile.places.map(item => <View key={item.name} style={styles.placeRow}>
-                <Image source={{ uri: item.image }} style={styles.placeImage} />
-                <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.name}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{item.rating}</Text></Text><Text style={styles.placeTag}>{item.tag}</Text></View>
-                <Ionicons name={item.saved ? 'bookmark' : 'bookmark-outline'} size={22} color="#BC6C25" />
-              </View>) : favorites.length ? favorites.map(item => <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityLabel={`Открыть ${item.place}`} style={styles.placeRow} onPress={() => handleOpenCompany(item.id)}>
-                <Image source={{ uri: item.image }} style={styles.placeImage} />
+              <View style={styles.placeHeading}><Ionicons name="location-outline" size={21} color="#283618" /><Text style={styles.placeHeadingText}>Сохранённые места</Text></View>
+              {favorites.length ? favorites.map(item => <TouchableOpacity key={item.id} accessibilityRole="button" accessibilityLabel={`Открыть ${item.place}`} style={styles.placeRow} onPress={() => handleOpenCompany(item.id)}>
+                <PlaceCover place={item} style={styles.placeImage} compact />
                 <View style={styles.placeInfo}><Text numberOfLines={2} style={styles.placeName}>{item.place}</Text><Text style={styles.placeRating}>★ <Text style={styles.placeRatingNumber}>{item.rating.toFixed(1).replace('.', ',')}</Text></Text>{!!item.tags[0] && <Text style={styles.placeTag}>{item.tags[0]}</Text>}</View>
                 <Ionicons name="bookmark" size={22} color="#BC6C25" />
               </TouchableOpacity>) : <Text style={styles.emptyStateText}>Сохраняйте интересные места, чтобы быстро к ним вернуться.</Text>}
@@ -406,7 +386,7 @@ type HorizontalItem = {
   id: string;
   title: string;
   subtitle: string;
-  image: string;
+  place: Post;
 };
 
 function HorizontalCollection({
@@ -430,10 +410,7 @@ function HorizontalCollection({
           activeOpacity={0.85}
           onPress={() => onPress(item.id)}
         >
-          <Image
-            source={{ uri: item.image || 'https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&w=400&q=80' }}
-            style={styles.collectionImage}
-          />
+          <PlaceCover place={item.place} style={styles.collectionImage} compact />
           <Text style={styles.collectionTitle} numberOfLines={2}>
             {item.title}
           </Text>
@@ -504,7 +481,6 @@ const baseStyles = StyleSheet.create({
   profileIdentity: { flex: 1, alignItems: 'flex-start', gap: 5 },
   avatarPlaceholder: { width: 108, height: 108, borderRadius: 54, backgroundColor: '#F0ECCD', alignItems: 'center', justifyContent: 'center' },
   avatarCamera: { position: 'absolute', right: 0, bottom: 0, width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#606C38', borderWidth: 2, borderColor: '#FEFAE0' },
-  profileSubtitle: { fontSize: 14, color: '#6F7457' },
   profileBio: { fontSize: 14, lineHeight: 21, color: '#283618', flexShrink: 1 },
   privacyTag: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   privacyText: { fontSize: 12, color: '#606C38' },

@@ -5,6 +5,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOp
 
 import { findPeople, getConnections, updateFriend, type Connections, type Person } from '@/lib/connections';
 import { ApiError } from '@/lib/statistics';
+import { webData } from '@/lib/web-data';
 
 function Action({ title, onPress, disabled = false, secondary = false }: {
   title: string;
@@ -122,7 +123,7 @@ export default function ConnectionsScreen() {
   const disabled = loading || busy || needsLogin;
 
   return (
-    <View style={styles.screen}>
+    <View {...webData({ hakrosFocus: 'connections' })} style={styles.screen}>
       <Stack.Screen options={{
         title: 'Друзья',
         headerBackTitle: 'Профиль',

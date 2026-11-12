@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Keyboard, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import MapCanvas from '@/components/MapCanvas';
 import type { MapCoordinates, MapPlace, MapPoint, MapState } from '@/components/MapCanvas.types';
@@ -9,12 +10,15 @@ import { MapBottomSheet } from '@/components/map-bottom-sheet';
 import { MapLocationSharing } from '@/components/map-location-sharing';
 import { MapRoutePanel, MapSearchResults, type MapSearchState } from '@/components/map-navigation-controls';
 import { palette, useAppStyles } from '@/lib/app-appearance';
+import { floatingNavigationHeight, floatingNavigationInset } from '@/lib/floating-navigation-layout';
 import { highlightNearbySubscriptions } from '@/lib/map-nearby';
 import { currentMapCoordinates, findAddresses, findRoute, placeSearchResult, type MapRoute, type MapSearchResult, type RoutePlan, type TravelMode } from '@/lib/map-navigation';
 import { registerMapSearchHandler } from '@/lib/map-search';
 import { api, ApiError, authorized } from '@/lib/statistics';
 import { useNearbyMapPosition } from '@/lib/use-nearby-map-position';
+import { useRoutePlayback } from '@/lib/use-route-playback';
 import { getUserSession, type UserSession } from '@/lib/user-session';
+import { webData } from '@/lib/web-data';
 
 type FriendLocation = MapCoordinates & { id: string; name: string; avatar?: string | null; updatedAt: number; expiresInMs: number };
 type FriendPin = MapPoint & { expiresAt: number };
@@ -23,6 +27,8 @@ const messageOf = (error: unknown) => error instanceof Error ? error.message : '
 
 export default function MapScreen() {
   const styles = useAppStyles(baseStyles);
+  const insets = useSafeAreaInsets();
+  const [searchFocused, setSearchFocused] = useState(false);
   const router = useRouter();
   const params = useLocalSearchParams<{ focusType?: string; focusId?: string }>();
   const [session, setSession] = useState<UserSession | null>(null);
@@ -38,6 +44,10 @@ export default function MapScreen() {
   const [destination, setDestination] = useState<MapSearchResult | null>(null);
   const [plan, setPlan] = useState<RoutePlan | null>(null);
   const [route, setRoute] = useState<(MapRoute & { sequence: number }) | null>(null);
+  const { playback, start: startPlayback, pause: pausePlayback, resume: resumePlayback,
+    stop: stopPlayback, toggleCamera, releaseCamera } = useRoutePlayback();
+  const [mapReady, setMapReady] = useState(false);
+  const onMapReady = useCallback(() => setMapReady(true), []);
   const [routeStatus, setRouteStatus] = useState<'idle' | 'locating' | 'routing'>('idle');
   const [routeError, setRouteError] = useState('');
   const [adding, setAdding] = useState(false);
@@ -58,7 +68,8 @@ export default function MapScreen() {
   const routeStart = plan?.origin ?? null;
   const mapState = useMemo<MapState>(() => ({
     places: highlightNearbySubscriptions(places, position), people, selected, center, destination, routeStart, route,
-  }), [places, position, people, selected, center, destination, routeStart, route]);
+    routePlayback: playback,
+  }), [places, position, people, selected, center, destination, routeStart, route, playback]);
   const recheckLocation = () => setPermissionCheck(check => check + 1);
 
   const move = useCallback(({ latitude, longitude }: MapCoordinates) => {
@@ -70,10 +81,11 @@ export default function MapScreen() {
   }, []);
   const resetRoute = useCallback(() => {
     routeRequest.current?.abort();
+    stopPlayback();
     setRoute(null);
     setRouteStatus('idle');
     setRouteError('');
-  }, []);
+  }, [stopPlayback]);
   const closeDestination = useCallback(() => {
     resetRoute();
     setDestination(null);
@@ -179,12 +191,6 @@ export default function MapScreen() {
       if (point) { move(point); setNotice(`Показано место: ${point.name}`); }
       else setNotice('Точка не найдена');
       handledFocus.current = key;
-    } else if (params.focusType === 'post' && session?.role === 'admin') {
-      const point = places.find(item => item.postId === focusId);
-      if (point) { move(point); setSelected(point); setName(point.name); setNotice('Можно выбрать новую точку и сохранить её'); }
-      else setNotice('Выберите точку для этого места на карте');
-      void api(`/api/posts/${encodeURIComponent(focusId)}`).then(post => setName(post.place)).catch(e => setError(messageOf(e)));
-      setAdding(true); handledFocus.current = key;
     }
     }, 0);
     return () => clearTimeout(timer);
@@ -302,19 +308,21 @@ export default function MapScreen() {
     if (!selected || !name.trim()) { setError('Укажите название и выберите точку на карте'); return; }
     setSaving(true); setError('');
     try {
-      const postId = params.focusType === 'post' && session.role === 'admin' ? params.focusId : undefined;
-      await authorized('/api/map/places', { method: 'POST', body: JSON.stringify({ name: name.trim(), ...selected, ...(postId ? { postId } : {}) }) });
-      setAdding(false); setSelected(null); setName(''); setNotice(postId ? 'Место добавлено на карту' : 'Место видно вам и друзьям. На проверку его можно отправить отдельно.');
-      if (postId) router.setParams({ focusType: undefined, focusId: undefined });
+      await authorized('/api/map/places', { method: 'POST', body: JSON.stringify({ name: name.trim(), ...selected }) });
+      setAdding(false); setSelected(null); setName(''); setNotice('Место видно вам и друзьям. На проверку его можно отправить отдельно.');
       await load(session);
     } catch (e) { setError(messageOf(e)); } finally { setSaving(false); }
   };
-  return <View style={styles.root}>
+  return <View {...webData({ hakrosFocus: 'map' })} style={styles.root}>
     <View style={styles.map}>
       <MapCanvas state={mapState}
-        onSelect={select} onError={canvasError} onSubmit={submitPoint} onOpenPlace={openPlace} />
+        onSelect={select} onError={canvasError} onSubmit={submitPoint} onOpenPlace={openPlace}
+        onReady={onMapReady} onRouteCameraMove={releaseCamera} />
     </View>
-    <View pointerEvents="box-none" style={styles.overlay}>
+    <View pointerEvents="box-none" style={[styles.overlay, {
+      paddingTop: insets.top + floatingNavigationInset,
+      paddingBottom: floatingNavigationHeight(insets.bottom),
+    }]}>
       <View style={styles.headerCard}>
         <Ionicons name="map" size={20} color={palette.olive} />
         <Text accessibilityRole="header" style={styles.title}>Карта города</Text>
@@ -322,16 +330,17 @@ export default function MapScreen() {
           <MapLocationSharing key={session.id} token={session.token} onError={canvasError}
             onOpenFriends={() => router.push('/connections')} onLocationGranted={recheckLocation} />
         )}
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Моё местоположение" onPress={() => void locate()}>
+        <TouchableOpacity style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Моё местоположение" onPress={() => void locate()}>
           <Ionicons name="locate" size={23} color={palette.olive} />
         </TouchableOpacity>
       </View>
-      <View style={styles.searchCard}>
+      <View {...webData({ focusGroup: 'map-search' })} style={[styles.searchCard, searchFocused && styles.searchFocused]}>
         <TextInput accessibilityLabel="Поиск адреса или места" placeholder="Адрес или название места"
           placeholderTextColor={palette.muted} value={query} onChangeText={text => { setQuery(text); cancelSearch(); }}
+          onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
           onSubmitEditing={() => void search(query)} returnKeyType="search" maxLength={160} style={styles.input} />
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Найти на карте"
-          onPress={() => void search(query)} style={styles.searchButton}>
+          onPress={() => void search(query)} style={styles.iconButton}>
           <Ionicons name="search" size={22} color={palette.olive} />
         </TouchableOpacity>
       </View>
@@ -344,6 +353,9 @@ export default function MapScreen() {
       >
         {destination && !adding ? (
           <MapRoutePanel destination={destination} plan={plan} route={route} status={routeStatus} error={routeError}
+            playback={playback} canStart={mapReady}
+            onStart={() => { if (route && mapReady) startPlayback(route); }}
+            onPause={pausePlayback} onResume={resumePlayback} onStop={stopPlayback} onToggleCamera={toggleCamera}
             onPlan={() => setPlan({ mode: 'walk', origin: null, pickingOrigin: false })}
             onClose={closeDestination} onMode={changeMode} onLocate={() => void locateOrigin()}
             onPickOrigin={() => {
@@ -370,12 +382,13 @@ export default function MapScreen() {
 
 const baseStyles = StyleSheet.create({
   root: { flex: 1, backgroundColor: palette.cream }, map: { ...StyleSheet.absoluteFill },
-  overlay: { ...StyleSheet.absoluteFill, padding: 16, paddingTop: Platform.OS === 'web' ? 16 : 48, paddingBottom: 100, justifyContent: 'flex-start' },
-  headerCard: { backgroundColor: palette.surface, borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  title: { color: palette.forest, fontWeight: '700', fontSize: 20, flex: 1 },
-  searchCard: { marginTop: 8, backgroundColor: palette.surface, borderRadius: 14, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
-  input: { flex: 1, paddingVertical: 13, color: palette.forest },
-  searchButton: { minWidth: 42, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
+  overlay: { ...StyleSheet.absoluteFill, paddingHorizontal: floatingNavigationInset },
+  headerCard: { backgroundColor: palette.surface, borderRadius: 16, borderWidth: 1, borderColor: palette.border, paddingVertical: 6, paddingLeft: 12, paddingRight: 5, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { color: palette.forest, fontWeight: '700', fontSize: 19, flex: 1, minWidth: 0 },
+  searchCard: { marginTop: 8, backgroundColor: palette.surface, borderRadius: 14, borderWidth: 2, borderColor: palette.border, paddingLeft: 12, paddingRight: 4, flexDirection: 'row', alignItems: 'center' },
+  searchFocused: { borderColor: palette.olive },
+  input: { flex: 1, minWidth: 0, minHeight: 44, paddingVertical: 10, fontSize: 16, color: palette.forest },
+  iconButton: { width: 44, height: 44, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   message: { marginTop: 8, backgroundColor: palette.surface, padding: 10, borderRadius: 12 },
   error: { color: '#b42318', fontSize: 13 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

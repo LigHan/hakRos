@@ -16,6 +16,15 @@ export type MapPoint = MapCoordinates & {
 
 export type MapPlace = MapPoint & { isSubscribed: boolean };
 
+export type RoutePlayback = {
+  runId: number;
+  routeSequence: number;
+  durationMs: number;
+  elapsedMs: number;
+  startedAt: number | null;
+  followCamera: boolean;
+};
+
 export type MapState = {
   places: MapPoint[];
   people: MapPoint[];
@@ -24,6 +33,7 @@ export type MapState = {
   destination: (MapCoordinates & { title: string; pointId?: string }) | null;
   routeStart: MapCoordinates | null;
   route: { coordinates: [number, number][]; sequence: number } | null;
+  routePlayback?: RoutePlayback | null;
 };
 
 export type MapCanvasProps = {
@@ -32,4 +42,6 @@ export type MapCanvasProps = {
   onError: (message: string) => void;
   onSubmit?: (id: string) => void;
   onOpenPlace?: (id: string) => void;
+  onRouteCameraMove?: (runId: number) => void;
+  onReady?: () => void;
 };

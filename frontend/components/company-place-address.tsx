@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import MapCanvas from '@/components/MapCanvas';
 import type { MapCoordinates, MapState } from '@/components/MapCanvas.types';
+import { webData } from '@/lib/web-data';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { addressAtPoint, findAddressSuggestions, type AddressSuggestion } from '@/lib/map-navigation';
 
@@ -158,7 +159,7 @@ function PlaceLocationPicker({ initialAddress, initialCoordinates, onCancel, onA
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={styles.backdrop}>
+      <View {...webData({ hakrosFocus: 'address-picker' })} style={styles.backdrop}>
         <SafeAreaView style={styles.picker} accessibilityViewIsModal>
           <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <View style={styles.pickerHeader}>

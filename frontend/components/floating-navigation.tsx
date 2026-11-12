@@ -7,7 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SketchFrame } from '@/components/sketch-frame';
 import { AssistantLauncher } from '@/components/assistant/AssistantLauncher';
 import { palette, useAppearance, useAppStyles } from '@/lib/app-appearance';
+import { floatingNavigationBorder, floatingNavigationBottomPadding, floatingNavigationInset, floatingNavigationRowHeight } from '@/lib/floating-navigation-layout';
 import { getUserSession } from '@/lib/user-session';
+import { webData } from '@/lib/web-data';
 
 type Icon = ComponentProps<typeof Ionicons>['name'];
 const tabs: { href: Href; path: string; label: string; icon: Icon; selected: Icon }[] = [
@@ -27,8 +29,8 @@ export function FloatingNavigation() {
   const [open, setOpen] = useState(false);
   const [chooserPath, setChooserPath] = useState(pathname);
   const [progress] = useState(() => new Animated.Value(0));
-  const bottom = Math.max(insets.bottom, 12);
-  const islandHeight = 66 + bottom;
+  const bottom = floatingNavigationBottomPadding(insets.bottom);
+  const islandHeight = floatingNavigationRowHeight + bottom;
   const close = useCallback(() => setOpen(false), []);
   // Route changes close synchronously, including browser back/forward. Waiting
   // for an animation frame can leave a click-through overlay in background tabs.
@@ -44,7 +46,7 @@ export function FloatingNavigation() {
     return () => { animation.stop(); listener.remove(); };
   }, [open, close, progress]);
 
-  if (pathname === '/admin' || pathname === '/login' || pathname === '/modal' || pathname === '/assistant-preview') return null;
+  if (pathname === '/admin' || pathname === '/login' || pathname === '/assistant-preview') return null;
   const navigate = async (href: Href, path: string) => {
     close();
     if (path === '/profile' && !(await getUserSession())) { router.push('/login'); return; }
@@ -74,7 +76,7 @@ export function FloatingNavigation() {
         <Pressable accessibilityRole="button" disabled={Platform.OS === 'web'} accessibilityState={{ disabled: Platform.OS === 'web' }} onPress={() => choose('story')} style={[styles.choice, Platform.OS === 'web' && styles.disabled]}><Ionicons name="videocam-outline" size={36} color={palette.terracotta} /><View style={styles.choiceText}><Text style={styles.choiceTitle}>История</Text><Text style={styles.description}>{Platform.OS === 'web' ? 'Создавайте истории в приложении на телефоне' : 'Снимите короткий момент на камеру'}</Text></View><SketchFrame /></Pressable>
       </ScrollView>
     </Animated.View>}
-    <View pointerEvents="box-none" style={[styles.navigation, { paddingBottom: bottom }]}>
+    <View {...webData({ hakrosFocus: 'navigation' })} pointerEvents="box-none" style={[styles.navigation, { paddingBottom: bottom }]}>
       <View style={[styles.island, mode === 'sketch' && styles.sketchIsland]}>
         {renderTab(0)}{renderTab(1)}
         <Pressable accessibilityRole="button" accessibilityLabel={open ? 'Закрыть создание' : 'Создать публикацию или историю'} accessibilityState={{ expanded: open }} onPress={() => { if (open) close(); else { progress.setValue(0); setOpen(true); } }} style={styles.plus}><Ionicons name={open ? 'close' : 'add'} size={30} color={palette.cream} /></Pressable>
@@ -85,8 +87,8 @@ export function FloatingNavigation() {
 }
 
 const baseStyles = StyleSheet.create({
-  navigation: { position: 'absolute', left: 12, right: 12, bottom: 0, zIndex: 30, alignItems: 'center', backgroundColor: palette.cream, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderTopWidth: 1, borderColor: palette.border },
-  island: { width: '100%', maxWidth: 350, height: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  navigation: { position: 'absolute', left: floatingNavigationInset, right: floatingNavigationInset, bottom: 0, zIndex: 30, alignItems: 'center', backgroundColor: palette.cream, borderTopLeftRadius: 26, borderTopRightRadius: 26, borderTopWidth: floatingNavigationBorder, borderColor: palette.border },
+  island: { width: '100%', maxWidth: 350, height: floatingNavigationRowHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   sketchIsland: { borderTopLeftRadius: 24, borderTopRightRadius: 19 },
   tab: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 3, minHeight: 48 },
   label: { color: palette.forest, fontSize: 9 }, selected: { color: palette.olive, fontWeight: '700' },

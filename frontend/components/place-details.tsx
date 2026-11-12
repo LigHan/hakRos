@@ -2,7 +2,7 @@ import { useAppStyles } from '@/lib/app-appearance';
 import { authorized, track } from '@/lib/statistics';
 import { getUserSession } from '@/lib/user-session';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
@@ -17,6 +17,7 @@ import {
   View
 } from 'react-native';
 
+import { PlacePhoto } from '@/components/place-photo';
 import { PlaceSubscriptionButton } from '@/components/place-subscription';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -29,6 +30,8 @@ import {
   toggleLike
 } from '@/lib/likes-favorites';
 import { triggerMapRoute, triggerMapSearch } from '@/lib/map-search';
+import { getPlacePhotos } from '@/lib/place-photos';
+import { webData } from '@/lib/web-data';
 
 export default function PlaceDetailsRoute() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -40,12 +43,13 @@ function PlaceDetails({ id }: { id?: string }) {
   const router = useRouter();
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(Boolean(id));
-  const [error, setError] = useState<string | null>(id ? null : 'ID поста не указан');
+  const [error, setError] = useState<string | null>(id ? null : 'Место не найдено');
   const [isLiked, setIsLiked] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isAuthModalVisible, setAuthModalVisible] = useState(false);
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const [isGalleryVisible, setGalleryVisible] = useState(false);
+  const [activePhotoKey, setActivePhotoKey] = useState<string | null>(null);
+  const [failedPhotos, setFailedPhotos] = useState<string[]>([]);
+  const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
   const [isWebAdmin, setWebAdmin] = useState(false);
   const [moderationError, setModerationError] = useState('');
   const [moderating, setModerating] = useState(false);
@@ -82,7 +86,7 @@ function PlaceDetails({ id }: { id?: string }) {
     return databaseService.getPostById(id)
       .then(async postData => {
         if (!postData) {
-          setError('Пост не найден');
+          setError('Место не найдено');
           setPost(null);
           return;
         }
@@ -94,7 +98,7 @@ function PlaceDetails({ id }: { id?: string }) {
       })
       .catch(error => {
         console.error('Не удалось загрузить карточку места', error);
-        setError('Ошибка загрузки данных');
+        setError('Не удалось загрузить карточку места. Проверьте соединение.');
       })
       .finally(() => setLoading(false));
   }, [id]);
@@ -205,27 +209,25 @@ function PlaceDetails({ id }: { id?: string }) {
     router.push('/login');
   };
 
-  const openGallery = (index: number) => {
-    setActiveImageIndex(index);
-    setGalleryVisible(true);
-  };
-
-  const closeGallery = () => {
-    setGalleryVisible(false);
-  };
+  const galleryImages = useMemo(
+    () => post ? getPlacePhotos(post).filter(photo => !failedPhotos.includes(photo.key)) : [],
+    [post, failedPhotos],
+  );
+  const activeImageIndex = Math.max(0, galleryImages.findIndex(photo => photo.key === activePhotoKey));
+  const activePhoto = galleryImages[activeImageIndex];
+  const closeGallery = () => setActivePhotoKey(null);
+  const onPhotoUnavailable = useCallback((key: string) => {
+    setFailedPhotos(current => current.includes(key) ? current : [...current, key]);
+  }, []);
 
   const navigateGallery = (direction: 'prev' | 'next') => {
-    if (!post?.gallery.length) return;
-
-    const newIndex = direction === 'next'
-      ? (activeImageIndex + 1) % post.gallery.length
-      : (activeImageIndex - 1 + post.gallery.length) % post.gallery.length;
-
-    setActiveImageIndex(newIndex);
+    const length = galleryImages.length;
+    if (!length) return;
+    const step = direction === 'next' ? 1 : -1;
+    setActivePhotoKey(galleryImages[(activeImageIndex + step + length) % length].key);
   };
 
   // Безопасный доступ к массивам
-  const galleryImages = useMemo(() => post?.gallery || [], [post?.gallery]);
   const postTags = useMemo(() => post?.tags || [], [post?.tags]);
   const postReviews = useMemo(() => post?.reviews || [], [post?.reviews]);
   const workingHours = useMemo(() => post?.workingHours || [], [post?.workingHours]);
@@ -245,7 +247,7 @@ function PlaceDetails({ id }: { id?: string }) {
       <ThemedView style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
         <ThemedText type="title" style={styles.errorTitle}>
-          {error || 'Пост не найден'}
+          {error || 'Место не найдено'}
         </ThemedText>
         {id && (
           <TouchableOpacity
@@ -265,15 +267,19 @@ function PlaceDetails({ id }: { id?: string }) {
 
   return (
     <>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView {...webData({ hakrosFocus: 'place-details' })} style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Основное изображение */}
         <TouchableOpacity
           style={styles.mainImageContainer}
-          onPress={() => openGallery(0)}
+          onPress={() => setActivePhotoKey(galleryImages[0]?.key ?? null)}
+          disabled={!galleryImages.length}
+          accessibilityRole={galleryImages.length ? 'button' : undefined}
+          accessibilityLabel={galleryImages.length ? 'Открыть фотографии места' : undefined}
           activeOpacity={0.9}
         >
-          <Image source={{ uri: post.image }} style={styles.mainImage} />
-          <View style={styles.imageOverlay}>
+          <PlacePhoto photos={galleryImages} name={post.place} category={post.category}
+            style={styles.mainImage} onUnavailable={onPhotoUnavailable} />
+          <View pointerEvents="none" style={styles.imageOverlay}>
             {galleryImages.length > 1 && (
               <View style={styles.galleryBadge}>
                 <Ionicons name="images-outline" size={16} color="#fff" />
@@ -282,6 +288,11 @@ function PlaceDetails({ id }: { id?: string }) {
             )}
           </View>
         </TouchableOpacity>
+        {galleryImages[0]?.credit && (
+          <Link href={galleryImages[0].credit.page} target="_blank" rel="noopener noreferrer" style={styles.photoCredit}>
+            Архивное фото · {galleryImages[0].credit.year} · {galleryImages[0].credit.author} · {galleryImages[0].credit.license}
+          </Link>
+        )}
 
         {/* Информация о месте */}
         <View style={styles.content}>
@@ -299,7 +310,13 @@ function PlaceDetails({ id }: { id?: string }) {
             </View>
 
             <View style={styles.authorRow}>
-              <Image source={{ uri: post.userAvatar }} style={styles.authorAvatar} />
+              <View style={styles.authorAvatar}>
+                <Ionicons name="storefront-outline" size={21} color="#606C38" aria-hidden />
+                {!!post.userAvatar && post.userAvatar !== failedAvatar && (
+                  <Image source={{ uri: post.userAvatar }} style={StyleSheet.absoluteFill}
+                    onError={() => setFailedAvatar(post.userAvatar)} />
+                )}
+              </View>
               <View style={styles.authorInfo}>
                 <Text style={styles.authorName}>{post.user}</Text>
                 <Text style={styles.authorHandle}>@{post.userHandle}</Text>
@@ -389,14 +406,17 @@ function PlaceDetails({ id }: { id?: string }) {
               </ThemedText>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.gallery}>
-                  {galleryImages.slice(1).map((image, index) => (
+                  {galleryImages.slice(1).map((photo, index) => (
                     <TouchableOpacity
-                      key={index}
+                      key={photo.key}
                       style={styles.galleryItem}
-                      onPress={() => openGallery(index + 1)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Открыть фото ${index + 2}`}
+                      onPress={() => setActivePhotoKey(photo.key)}
                       activeOpacity={0.8}
                     >
-                      <Image source={{ uri: image }} style={styles.galleryImage} />
+                      <PlacePhoto photos={[photo]} name={post.place} category={post.category}
+                        style={styles.galleryImage} compact onUnavailable={onPhotoUnavailable} />
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -495,18 +515,20 @@ function PlaceDetails({ id }: { id?: string }) {
       </Modal>
 
       {/* Галерея */}
-      <Modal visible={isGalleryVisible} transparent animationType="fade" onRequestClose={closeGallery}>
+      <Modal visible={activePhotoKey !== null && Boolean(activePhoto)} transparent animationType="fade" onRequestClose={closeGallery}>
         <Pressable style={styles.galleryOverlay} onPress={closeGallery}>
-          <Pressable style={styles.galleryContent} onPress={event => event.stopPropagation()}>
-            <Image
-              source={{ uri: galleryImages[activeImageIndex] ?? post.image }}
-              style={styles.galleryFullImage}
-            />
+          <Pressable {...webData({ hakrosFocus: 'place-gallery' })} style={styles.galleryContent} onPress={event => event.stopPropagation()}>
+            {activePhoto && (
+              <PlacePhoto photos={[activePhoto]} name={post.place} category={post.category}
+                style={styles.galleryFullImage} fit="contain" onUnavailable={onPhotoUnavailable} />
+            )}
 
             {galleryImages.length > 1 && (
               <>
                 <TouchableOpacity
                   style={[styles.galleryNavButton, styles.galleryNavButtonLeft]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Предыдущее фото"
                   onPress={() => navigateGallery('prev')}
                 >
                   <Ionicons name="chevron-back" size={28} color="#fff" />
@@ -514,6 +536,8 @@ function PlaceDetails({ id }: { id?: string }) {
 
                 <TouchableOpacity
                   style={[styles.galleryNavButton, styles.galleryNavButtonRight]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Следующее фото"
                   onPress={() => navigateGallery('next')}
                 >
                   <Ionicons name="chevron-forward" size={28} color="#fff" />
@@ -527,7 +551,8 @@ function PlaceDetails({ id }: { id?: string }) {
               </>
             )}
 
-            <TouchableOpacity style={styles.galleryCloseButton} onPress={closeGallery}>
+            <TouchableOpacity style={styles.galleryCloseButton} accessibilityRole="button"
+              accessibilityLabel="Закрыть фотографии" onPress={closeGallery}>
               <Ionicons name="close" size={24} color="#fff" />
             </TouchableOpacity>
           </Pressable>
@@ -583,7 +608,14 @@ const baseStyles = StyleSheet.create({
   },
   mainImage: {
     width: '100%',
-    height: 300,
+    aspectRatio: 1.4,
+  },
+  photoCredit: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    color: '#6F7457',
+    fontSize: 11,
+    lineHeight: 16,
   },
   imageOverlay: {
     ...StyleSheet.absoluteFill,
@@ -645,6 +677,10 @@ const baseStyles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EDECD8',
   },
   authorInfo: {
     flex: 1,
@@ -905,7 +941,6 @@ const baseStyles = StyleSheet.create({
   galleryFullImage: {
     width: '100%',
     height: '80%',
-    resizeMode: 'contain',
   },
   galleryNavButton: {
     position: 'absolute',

@@ -9,6 +9,7 @@ import { palette, useAppearance, useAppStyles, type AppearanceMode } from '@/lib
 import { authorized } from '@/lib/statistics';
 import { clearUserSession, getUserSession, type UserSession } from '@/lib/user-session';
 import { getAccountProfile, updateAccountProfile } from '@/lib/account-profile';
+import { webData } from '@/lib/web-data';
 
 export default function SettingsScreen() {
   const { mode, ready, setMode } = useAppearance();
@@ -100,7 +101,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={styles.page} contentContainerStyle={styles.content}>
+    <ScrollView {...webData({ hakrosFocus: 'settings' })} style={styles.page} contentContainerStyle={styles.content}>
       {mode === 'sketch' && <Image source={require('@/assets/images/mascot-sketch.png')} style={styles.mascot} accessibilityLabel="Маскот приложения" />}
       <Text style={styles.eyebrow}>ВАШЕ ПРОСТРАНСТВО</Text>
       <Text style={styles.title}>Настройки</Text>

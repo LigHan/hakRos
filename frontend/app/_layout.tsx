@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import 'react-native-reanimated';
 import '../styles/scrollbars.css';
+import '../styles/interactive.css';
 
 import { AppearanceProvider, palette, useAppStyles } from '@/lib/app-appearance';
 import { FloatingNavigation } from '@/components/floating-navigation';
@@ -40,7 +41,6 @@ function AppLayout() {
           <View style={styles.stackContainer}>
             <Stack screenOptions={{ headerLeft: () => <BackButton />, headerTintColor: palette.forest }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
               <Stack.Screen name="company/[id]" options={{ headerTitle: '', headerTransparent: true }} />
               <Stack.Screen name="admin" options={{ headerShown: false }} />
               <Stack.Screen name="settings" options={{ title: 'Настройки', headerStyle: { backgroundColor: palette.cream }, headerTintColor: palette.forest }} />

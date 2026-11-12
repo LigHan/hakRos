@@ -1,3 +1,5 @@
+import { CatalogStatus } from '@/components/catalog-status';
+import { PlaceCover } from '@/components/place-photo';
 import { SketchFrame } from '@/components/sketch-frame';
 import { useAppStyles } from '@/lib/app-appearance';
 import { track } from '@/lib/statistics';
@@ -9,11 +11,13 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -27,15 +31,18 @@ import {
 } from '@/lib/likes-favorites';
 import { triggerMapRoute, triggerMapSearch } from '@/lib/map-search';
 import { matchesPlaceCategory, placeCategories } from '@/lib/place-categories';
+import { webData } from '@/lib/web-data';
 
 type NearbyPost = Post;
 
 export default function NearbyScreen() {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
+  const { top } = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [posts, setPosts] = useState<NearbyPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activePost, setActivePost] = useState<NearbyPost | null>(null);
   const [isDetailVisible, setDetailVisible] = useState(false);
   const [postLikes, setPostLikes] = useState<Record<string, boolean>>({});
@@ -45,13 +52,19 @@ export default function NearbyScreen() {
   const loadData = useCallback(() => {
     return databaseService.getPosts()
       .then(setPosts)
-      .catch(error => console.error('Не удалось загрузить места', error))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const reload = () => {
+    setLoading(true);
+    setLoadError(false);
+    void loadData();
+  };
 
   // Загружаем состояния лайков и избранного
   useEffect(() => {
@@ -180,10 +193,6 @@ export default function NearbyScreen() {
     router.push('/login');
   };
 
-  const handleDownload = (id: string) => {
-    console.log(`download for ${id}`);
-  };
-
   const handleOpenProfile = (post: NearbyPost) => {
     router.push({ pathname: '/company/[id]', params: { id: post.id } });
   };
@@ -194,7 +203,7 @@ export default function NearbyScreen() {
       style={styles.post}
       onPress={() => handleOpenDetail(item)}
     >
-      <Image source={{ uri: item.image }} style={styles.image} />
+      <PlaceCover place={item} style={styles.image} />
       <View style={styles.info}>
         <View style={styles.authorRow}>
           <TouchableOpacity onPress={() => handleOpenProfile(item)} activeOpacity={0.8}>
@@ -216,7 +225,6 @@ export default function NearbyScreen() {
             <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
           </View>
         </View>
-        <Text style={styles.userCaption}>от {item.user}</Text>
         <TouchableOpacity
           style={styles.addressRow}
           activeOpacity={0.85}
@@ -259,13 +267,6 @@ export default function NearbyScreen() {
           >
             <Ionicons name="navigate-outline" size={24} color="#283618" />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleDownload(item.id)}
-            style={styles.actionButton}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="download-outline" size={24} color="#283618" />
-          </TouchableOpacity>
         </View>
         <TouchableOpacity
           onPress={() => handleFavorite(item.id)}
@@ -283,25 +284,16 @@ export default function NearbyScreen() {
     </TouchableOpacity>
   );
 
-  if (loading) {
-    return (
-      <ThemedView style={styles.loadingContainer}>
-        <Ionicons name="location-outline" size={48} color="#606C38" />
-        <ThemedText style={styles.loadingText}>Загрузка мест рядом...</ThemedText>
-      </ThemedView>
-    );
-  }
-
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.header}>
+    <ThemedView {...webData({ hakrosFocus: 'nearby' })} style={styles.container}>
+      <View style={[styles.header, { paddingTop: top + 16 }]}>
         <View style={styles.headerTop}>
           <View style={styles.titleLine}>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="Назад" onPress={() => router.canGoBack() ? router.back() : router.replace('/')} style={styles.backButton}><Ionicons name="arrow-back" size={24} color="#283618" /></TouchableOpacity>
             <ThemedText type="title" style={styles.title}>Места рядом</ThemedText>
           </View>
           <ThemedText style={styles.subtitle}>
-            Подборка актуальных мест вокруг — маршруты, события и авторские подборки
+            Места города по категориям
           </ThemedText>
         </View>
 
@@ -338,20 +330,14 @@ export default function NearbyScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
         refreshing={loading}
-        onRefresh={() => {
-          setLoading(true);
-          void loadData();
-        }}
+        onRefresh={reload}
+        ListHeaderComponent={loadError && visiblePosts.length
+          ? <CatalogStatus loading={false} failed emptyMessage="" onRetry={reload} />
+          : undefined}
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="location-outline" size={64} color="#c6c6c8" />
-            <ThemedText type="defaultSemiBold" style={styles.emptyTitle}>
-              Ничего не найдено
-            </ThemedText>
-            <ThemedText style={styles.emptyText}>
-              Попробуйте выбрать другую категорию
-            </ThemedText>
-          </View>
+          <CatalogStatus loading={loading} failed={loadError} onRetry={reload}
+            emptyMessage={posts.length ? 'В этой категории пока нет мест.' : 'В каталоге пока нет мест.'}
+            onReset={selectedCategory !== 'all' ? () => setSelectedCategory('all') : undefined} />
         }
       />
 
@@ -392,96 +378,100 @@ export default function NearbyScreen() {
       >
         <Pressable style={styles.detailOverlay} onPress={handleCloseDetail}>
           {activePost && (
-            <Pressable style={styles.detailCard} onPress={event => event.stopPropagation()}>
-              <Image source={{ uri: activePost.image }} style={styles.detailImage} />
-              <View style={styles.detailContent}>
-                <View style={styles.detailHeader}>
-                  <Text style={styles.detailTitle}>{activePost.place}</Text>
-                  <View style={styles.detailRating}>
-                    <Ionicons name="star" size={18} color="#BC6C25" />
-                    <Text style={styles.detailRatingText}>{activePost.rating.toFixed(1)}</Text>
-                  </View>
-                </View>
-                <Text style={styles.detailSubtitle}>{activePost.user}</Text>
-                <TouchableOpacity
-                  style={styles.detailAddressRow}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    handleCloseDetail();
-                    openInMap(activePost);
-                  }}
-                >
-                  <Ionicons name="location-outline" size={18} color="#606C38" />
-                  <Text style={styles.detailAddressText}>{activePost.address}</Text>
-                </TouchableOpacity>
-                <View style={styles.detailTags}>
-                  {activePost.tags.map(tag => (
-                    <View key={`${activePost.id}-detail-${tag}`} style={styles.detailTagChip}>
-                      <Text style={styles.detailTagText}>#{tag}</Text>
+            <Pressable {...webData({ hakrosFocus: 'place-preview' })} style={styles.detailCard} onPress={event => event.stopPropagation()}>
+              <ScrollView>
+                <PlaceCover place={activePost} style={styles.detailImage} />
+                <View style={styles.detailContent}>
+                  <View style={styles.detailHeader}>
+                    <Text style={styles.detailTitle}>{activePost.place}</Text>
+                    <View style={styles.detailRating}>
+                      <Ionicons name="star" size={18} color="#BC6C25" />
+                      <Text style={styles.detailRatingText}>{activePost.rating.toFixed(1)}</Text>
                     </View>
-                  ))}
-                </View>
-                <Text style={styles.detailDescription}>
-                  {activePost.reviews[0]?.comment ??
-                    'Здесь вы найдете лучшие впечатления города: маршруты, атмосферные пространства и события рядом.'}
-                </Text>
-                <View style={styles.detailMetaRow}>
+                  </View>
+                  <Text style={styles.detailSubtitle}>{activePost.user}</Text>
                   <TouchableOpacity
-                    style={styles.detailMeta}
+                    style={styles.detailAddressRow}
                     activeOpacity={0.85}
                     onPress={() => {
                       handleCloseDetail();
                       openInMap(activePost);
                     }}
                   >
-                    <Ionicons name="map-outline" size={18} color="#283618" />
-                    <Text style={styles.detailMetaText}>На карте</Text>
+                    <Ionicons name="location-outline" size={18} color="#606C38" />
+                    <Text style={styles.detailAddressText}>{activePost.address}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.detailMeta}
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      handleCloseDetail();
-                      buildRoute(activePost);
-                    }}
-                  >
-                    <Ionicons name="navigate-outline" size={18} color="#283618" />
-                    <Text style={styles.detailMetaText}>Маршрут</Text>
-                  </TouchableOpacity>
-                  <View style={styles.detailMeta}>
-                    <Ionicons
-                      name={postLikes[activePost.id] ? "heart" : "heart-outline"}
-                      size={18}
-                      color={postLikes[activePost.id] ? "#BC6C25" : "#BC6C25"}
-                    />
-                    <Text style={styles.detailMetaText}>{`${formatCompactNumber(activePost.likes)} отметок`}</Text>
+                  <View style={styles.detailTags}>
+                    {activePost.tags.map(tag => (
+                      <View key={`${activePost.id}-detail-${tag}`} style={styles.detailTagChip}>
+                        <Text style={styles.detailTagText}>#{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.detailDescription}>
+                    {activePost.bio || 'Описание пока не добавлено.'}
+                  </Text>
+                  <View style={styles.detailMetaRow}>
+                    <TouchableOpacity
+                      style={styles.detailMeta}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        handleCloseDetail();
+                        openInMap(activePost);
+                      }}
+                    >
+                      <Ionicons name="map-outline" size={18} color="#283618" />
+                      <Text style={styles.detailMetaText}>На карте</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.detailMeta}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        handleCloseDetail();
+                        buildRoute(activePost);
+                      }}
+                    >
+                      <Ionicons name="navigate-outline" size={18} color="#283618" />
+                      <Text style={styles.detailMetaText}>Маршрут</Text>
+                    </TouchableOpacity>
+                    <View style={styles.detailMeta}>
+                      <Ionicons
+                        name={postLikes[activePost.id] ? "heart" : "heart-outline"}
+                        size={18}
+                        color={postLikes[activePost.id] ? "#BC6C25" : "#BC6C25"}
+                      />
+                      <Text style={styles.detailMetaText}>{`${formatCompactNumber(activePost.likes)} отметок`}</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-              <View style={styles.detailUserBar}>
-                <TouchableOpacity
-                  style={styles.detailUserInfo}
-                  activeOpacity={0.85}
-                  onPress={() => handleOpenProfile(activePost)}
-                >
-                  <Image source={{ uri: activePost.userAvatar }} style={styles.detailUserAvatar} />
-                  <View style={styles.detailUserText}>
-                    <Text style={styles.detailUserName}>{activePost.user}</Text>
-                    <Text style={styles.detailUserCaption}>Автор публикации</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => handleFavorite(activePost.id)}
-                  style={[styles.detailFavoriteButton, postFavorites[activePost.id] && styles.detailFavoriteButtonActive]}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons
-                    name={postFavorites[activePost.id] ? "bookmark" : "bookmark-outline"}
-                    size={22}
-                    color={postFavorites[activePost.id] ? "#606C38" : "#6F7457"}
-                  />
-                </TouchableOpacity>
-              </View>
+                <View style={styles.detailUserBar}>
+                  <TouchableOpacity
+                    style={styles.detailUserInfo}
+                    activeOpacity={0.85}
+                    onPress={() => handleOpenProfile(activePost)}
+                  >
+                    <Image source={{ uri: activePost.userAvatar }} style={styles.detailUserAvatar} />
+                    <View style={styles.detailUserText}>
+                      <Text style={styles.detailUserName}>{activePost.user}</Text>
+                      <Text style={styles.detailUserCaption}>Автор публикации</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleFavorite(activePost.id)}
+                    style={[styles.detailFavoriteButton, postFavorites[activePost.id] && styles.detailFavoriteButtonActive]}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons
+                      name={postFavorites[activePost.id] ? "bookmark" : "bookmark-outline"}
+                      size={22}
+                      color={postFavorites[activePost.id] ? "#606C38" : "#6F7457"}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+              <Pressable accessibilityRole="button" accessibilityLabel="Закрыть карточку" onPress={handleCloseDetail} style={styles.detailClose}>
+                <Ionicons name="close" size={22} color="#283618" />
+              </Pressable>
             </Pressable>
           )}
         </Pressable>
@@ -494,19 +484,6 @@ const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#6F7457',
-    textAlign: 'center',
   },
   header: {
     paddingHorizontal: 20,
@@ -573,7 +550,7 @@ const baseStyles = StyleSheet.create({
   },
   image: {
     width: '100%',
-    height: 220,
+    aspectRatio: 1.8,
   },
   info: {
     padding: 16,
@@ -626,10 +603,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#BC6C25',
-  },
-  userCaption: {
-    color: '#777',
-    marginTop: 4,
   },
   addressRow: {
     flexDirection: 'row',
@@ -692,26 +665,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
-    color: '#283618',
-  },
-  emptyText: {
-    fontSize: 14,
-    opacity: 0.7,
-    textAlign: 'center',
-    lineHeight: 20,
-    color: '#475569',
-  },
   detailOverlay: {
     flex: 1,
     backgroundColor: 'rgba(12, 15, 26, 0.78)',
@@ -722,6 +675,7 @@ const baseStyles = StyleSheet.create({
   detailCard: {
     width: '100%',
     maxWidth: 380,
+    maxHeight: '100%',
     borderRadius: 28,
     overflow: 'hidden',
     backgroundColor: '#f8fafc',
@@ -731,9 +685,10 @@ const baseStyles = StyleSheet.create({
     shadowOffset: { width: 0, height: 18 },
     elevation: 20,
   },
+  detailClose: { position: 'absolute', right: 12, top: 12, width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFCED', alignItems: 'center', justifyContent: 'center' },
   detailImage: {
     width: '100%',
-    height: 260,
+    aspectRatio: 1.6,
   },
   detailContent: {
     paddingHorizontal: 24,

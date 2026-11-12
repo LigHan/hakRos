@@ -12,7 +12,8 @@ import '../styles/web-workspace.css';
 import { AppearanceProvider, palette, useAppStyles } from '@/lib/app-appearance';
 import { FloatingNavigation } from '@/components/floating-navigation';
 import { PlaceDetails } from '@/components/place-details';
-import { SocialPost } from '@/app/post/[id]';
+import { SocialPostDetail } from '@/components/social-post-detail';
+import { PostPanelStateProvider } from '@/lib/post-panel-state';
 import { PostPreviewContext, type PostPreview } from '@/lib/web-post-preview';
 import { webData } from '@/lib/web-data';
 
@@ -74,6 +75,7 @@ function AppLayout() {
   const layout = isWeb && pathname === '/map' ? 'map' : preview ? 'post' : 'normal';
 
   const viewport = <View {...webData({ workspaceMain: 'true' })} style={[viewportStyle, isWeb && !isWebAdmin && styles.webMain, compactWeb && styles.compactWebViewport]}>
+    <PostPanelStateProvider>
     <View style={styles.stackContainer}>
       <Stack screenOptions={{ headerLeft: () => <BackButton />, headerTintColor: palette.forest }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -85,6 +87,7 @@ function AppLayout() {
       </Stack>
     </View>
     <FloatingNavigation />
+    </PostPanelStateProvider>
   </View>;
 
   return (
@@ -97,7 +100,7 @@ function AppLayout() {
                 <Pressable accessibilityRole="button" accessibilityLabel="Закрыть публикацию" onPress={closePreview} style={styles.backButton}><Ionicons name="arrow-back" size={24} color={palette.forest} /></Pressable>
               </View>
               <View key={`${displayedPreview.type}:${displayedPreview.id}`} {...webData({ workspacePost: 'true' })} style={styles.detailContent}>
-                {displayedPreview.type === 'place' ? <PlaceDetails id={displayedPreview.id} embedded /> : <SocialPost id={displayedPreview.id} embedded />}
+                {displayedPreview.type === 'place' ? <PlaceDetails id={displayedPreview.id} embedded /> : <SocialPostDetail id={displayedPreview.id} embedded />}
               </View>
             </View>}
             {viewport}

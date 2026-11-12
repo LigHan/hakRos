@@ -8,6 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PlaceCover } from '@/components/place-photo';
 import { SketchFrame } from '@/components/sketch-frame';
 import { SocialFeed } from '@/components/social-feed';
+import { PostPanel, type OpenPost } from '@/components/post-panel';
+import { usePostPanelState } from '@/lib/post-panel-state';
 import { databaseService, formatPlaceRating, type Post, type Story } from '@/constants/content';
 import { palette, useAppStyles, useAppearance } from '@/lib/app-appearance';
 import { matchesPlaceCategory, placeCategories } from '@/lib/place-categories';
@@ -26,6 +28,10 @@ export default function RecommendationsScreen() {
   const insets = useSafeAreaInsets();
   const { mode } = useAppearance();
   const [category, setCategory] = useState('all');
+  const [openPost, setOpenPost] = useState<OpenPost | null>(null);
+  const { setVisible: setPostPanelVisible } = usePostPanelState();
+  const showPost = useCallback((post: OpenPost) => { setOpenPost(post); setPostPanelVisible(true); }, [setPostPanelVisible]);
+  const closePost = useCallback(() => { setOpenPost(null); setPostPanelVisible(false); }, [setPostPanelVisible]);
   const [places, setPlaces] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -73,7 +79,7 @@ export default function RecommendationsScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void load(); return closePost; }, [load, closePost]));
   useEffect(() => {
     if (!preview.revision) return;
     let active = true;
@@ -94,7 +100,7 @@ export default function RecommendationsScreen() {
 
   const filtered = useMemo(() => rankRecommendations(places, favorites, likes).filter(place => matchesPlaceCategory(place, category)), [places, category, favorites, likes]);
   const openPost = (id: string) => {
-    if (!preview.open({ type: 'place', id })) router.push({ pathname: '/place-post/[id]', params: { id } });
+    if (!preview.open({ type: 'place', id })) showPost({ kind: 'place', id });
   };
 
   return (
@@ -116,7 +122,7 @@ export default function RecommendationsScreen() {
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={<View>
             {error && <Pressable accessibilityRole="button" onPress={() => void load()}><Text style={styles.storyError}>Не удалось обновить места. Нажмите, чтобы повторить.</Text></Pressable>}
-            <SocialFeed legacyStories={stories} legacyError={storiesState === 'error'} />
+            <SocialFeed legacyStories={stories} legacyError={storiesState === 'error'} onOpenPost={id => showPost({ kind: 'social', id })} />
             <FlatList horizontal data={placeCategories} keyExtractor={item => item.id} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters} renderItem={({ item }) => (
               <Pressable accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => setCategory(item.id)} style={[styles.filter, category === item.id && styles.filterActive]}><Text style={[styles.filterText, category === item.id && styles.filterTextActive]}>{item.name}</Text></Pressable>
             )} />
@@ -145,7 +151,7 @@ export default function RecommendationsScreen() {
           )}
         />
       )}
-
+      {openPost && <PostPanel post={openPost} onClose={closePost} />}
     </View>
   );
 }

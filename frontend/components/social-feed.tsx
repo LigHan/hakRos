@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, Style
 
 import { SketchFrame } from '@/components/sketch-frame';
 import { SocialMedia } from '@/components/social-media';
+import { StoryViewer, type StoryEntry } from '@/components/story-viewer';
 import type { Story } from '@/constants/content';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { addSocialComment, getSocialComments, getSocialFeed, getSocialItem, publishSocial, setSocialLike, socialRequestId, type SocialComment, type SocialItem } from '@/lib/social';
@@ -13,8 +14,7 @@ import { getUserSession, type UserSession } from '@/lib/user-session';
 import { ApiError } from '@/lib/statistics';
 import { usePostPreview } from '@/lib/web-post-preview';
 
-type StoryEntry = { id: string; authorKey: string; name: string; text: string; image: string | null; mediaKind: 'image' | 'video'; avatar: string | null; placeId: string | null };
-export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Story[]; legacyError: boolean }) {
+export function SocialFeed({ legacyStories, legacyError, onOpenPost }: { legacyStories: Story[]; legacyError: boolean; onOpenPost: (id: string) => void }) {
   const styles = useAppStyles(baseStyles);
   const router = useRouter();
   const preview = usePostPreview();
@@ -76,7 +76,7 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
   const posts = items.filter(item => item.kind === 'post');
   const activeStory = storyGroup?.[storyIndex];
   const openPost = (item: SocialItem) => {
-    if (!preview.open({ type: 'social', id: item.id })) router.push({ pathname: '/post/[id]', params: { id: item.id } });
+    if (!preview.open({ type: 'social', id: item.id })) onOpenPost(item.id);
   };
   const openProfile = (item: SocialItem) => item.placeId
     ? router.push({ pathname: '/company/[id]', params: { id: item.placeId } })
@@ -159,10 +159,11 @@ export function SocialFeed({ legacyStories, legacyError }: { legacyStories: Stor
       </View>)}
       {!!message && !commentItem && <Text accessibilityRole="alert" style={styles.hint}>{message}</Text>}
     </View>}
-    <Modal visible={!!activeStory} transparent animationType="fade" onRequestClose={() => setStoryGroup(null)}><View style={styles.overlay}><View style={styles.modal}>
-      {activeStory && <><Text style={styles.heading}>{activeStory.name} · {storyIndex+1}/{storyGroup?.length}</Text>{!!activeStory.image && <SocialMedia key={activeStory.id} uri={activeStory.image} kind={activeStory.mediaKind} active={!!activeStory} style={styles.storyImage} onRetry={() => void refreshStory()}/>}<Text style={styles.body}>{activeStory.text}</Text><View style={styles.actions}>{storyIndex > 0 && <Pressable onPress={() => setStoryIndex(storyIndex-1)}><Text style={styles.link}>Назад</Text></Pressable>}{storyGroup && storyIndex+1 < storyGroup.length && <Pressable onPress={() => setStoryIndex(storyIndex+1)}><Text style={styles.link}>Следующая</Text></Pressable>}{activeStory.placeId && <Pressable onPress={() => {const id=activeStory.placeId; setStoryGroup(null); if(id) router.push({pathname:'/company/[id]',params:{id}});}}><Text style={styles.link}>Открыть место</Text></Pressable>}</View></>}
-      <Pressable onPress={() => setStoryGroup(null)} style={styles.close}><Text style={styles.link}>Закрыть</Text></Pressable>
-    </View></View></Modal>
+    {activeStory && storyGroup && <StoryViewer stories={storyGroup} index={storyIndex}
+      onPrevious={() => setStoryIndex(current => Math.max(0, current - 1))}
+      onNext={() => { if (storyIndex + 1 < storyGroup.length) setStoryIndex(storyIndex + 1); else setStoryGroup(null); }}
+      onClose={() => setStoryGroup(null)} onRetry={() => void refreshStory()}
+      onOpenPlace={id => { setStoryGroup(null); router.push({ pathname:'/company/[id]',params:{id} }); }} />}
     <Modal visible={!!commentItem} transparent animationType="slide" onRequestClose={() => setCommentItem(null)}><View style={styles.overlay}><View style={styles.modal}>
       <Text style={styles.heading}>Комментарии</Text><ScrollView style={styles.commentList} keyboardShouldPersistTaps="handled">{comments.map(value => <View key={value.id} style={styles.comment}><Text style={styles.author}>{value.authorName}</Text><Text style={styles.body}>{value.body}</Text></View>)}{!comments.length && !busy && <Text style={styles.hint}>Комментариев пока нет</Text>}</ScrollView>
       <TextInput value={commentText} editable={!commentRequest} onChangeText={setCommentText} placeholder="Ваш комментарий" placeholderTextColor={palette.muted} maxLength={1000} multiline style={styles.input}/>{!!message && <Text style={styles.error}>{message}</Text>}

@@ -2,13 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useRouter } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
-  ActivityIndicator, Animated, Image, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable,
+  ActivityIndicator, Animated, BackHandler, Image, KeyboardAvoidingView, PanResponder, Platform, Pressable,
   ScrollView, StyleSheet, Text, TextInput, View, type LayoutChangeEvent, type ViewProps, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_URL } from '@/lib/statistics';
 import { getUserSession } from '@/lib/user-session';
 import { triggerMapRoute } from '@/lib/map-search';
+import { floatingNavigationHeight } from '@/lib/floating-navigation-layout';
 import { webData } from '@/lib/web-data';
 
 type PlaceCard = { placeId: string; name: string; address: string; image: string | null; description: string; reason: string; price: number | null; pricing?: { entryType: 'unknown' | 'free' | 'paid'; entryPrice: number | null; spendMin: number | null; spendMax: number | null }; budgetMatch?: 'fits' | 'unknown'; durationMinutes: number | null; actions: string[] };
@@ -192,6 +193,15 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
   const sendingRef = useRef(false);
   const [dock] = useState(createDockMotion);
 
+  const [openPath, setOpenPath] = useState(pathname);
+  if (openPath !== pathname) { setOpenPath(pathname); if (open) setOpen(false); }
+  if (hidden && open) setOpen(false);
+  useEffect(() => {
+    if (!open) return;
+    const listener = BackHandler.addEventListener('hardwareBackPress', () => { setOpen(false); return true; });
+    return () => listener.remove();
+  }, [open]);
+
   function measureDock(event: LayoutChangeEvent) {
     dock.measure(event.nativeEvent.layout.width);
   }
@@ -300,8 +310,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
         </Animated.View>
       </View>
 
-      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
-        <View style={styles.modalBackdrop}>
+      {open && <View pointerEvents="box-none" style={[styles.chatLayer, { bottom: floatingNavigationHeight(insets.bottom) }]}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalWrap}>
             <SafeAreaView edges={['bottom']} style={styles.sheet}>
               <View style={styles.handle} />
@@ -376,8 +385,7 @@ export function AssistantLauncher({ hidden = false }: { hidden?: boolean }) {
               <Text style={styles.footer}>Сообщения и последние реплики передаются GigaChat. Не отправляйте пароли и личные данные.</Text>
             </SafeAreaView>
           </KeyboardAvoidingView>
-        </View>
-      </Modal>
+      </View>}
     </>
   );
 }
@@ -389,8 +397,8 @@ const styles = StyleSheet.create({
   grabHalo: { position: 'absolute', left: -7, top: -7, width: WIDGET_SIZE + 14, height: WIDGET_SIZE + 14, borderRadius: 24, backgroundColor: '#a3b370', opacity: 0.45 },
   launcher: { width: WIDGET_SIZE, height: WIDGET_SIZE, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fdfbf0', borderRadius: 17, elevation: 6, shadowColor: '#1c2514', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
   pressed: { opacity: 0.85 },
-  modalBackdrop: { flex: 1, justifyContent: 'flex-end', alignItems: 'center', backgroundColor: 'rgba(22, 29, 17, 0.5)' },
-  modalWrap: { width: '100%', maxWidth: 480, height: '78%' },
+  chatLayer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 40, justifyContent: 'flex-end', alignItems: 'center' },
+  modalWrap: { width: '100%', height: '82%', maxHeight: 690, borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: '#283618', shadowOpacity: 0.18, shadowRadius: 12, elevation: 8 },
   sheet: { flex: 1, backgroundColor: '#fbf9f0', borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden' },
   handle: { width: 36, height: 4, borderRadius: 4, backgroundColor: '#c5c9b5', alignSelf: 'center', marginTop: 10 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 18, borderBottomWidth: 1, borderBottomColor: '#e6e9da' },

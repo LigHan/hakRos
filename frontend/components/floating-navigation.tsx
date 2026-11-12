@@ -9,6 +9,7 @@ import { AssistantLauncher } from '@/components/assistant/AssistantLauncher';
 import { palette, useAppearance, useAppStyles } from '@/lib/app-appearance';
 import { floatingNavigationBorder, floatingNavigationBottomPadding, floatingNavigationInset, floatingNavigationRowHeight } from '@/lib/floating-navigation-layout';
 import { getUserSession } from '@/lib/user-session';
+import { usePostPanelState } from '@/lib/post-panel-state';
 import { webData } from '@/lib/web-data';
 
 type Icon = ComponentProps<typeof Ionicons>['name'];
@@ -26,6 +27,7 @@ export function FloatingNavigation() {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { mode } = useAppearance();
+  const { visible: postPanelVisible } = usePostPanelState();
   const [open, setOpen] = useState(false);
   const [chooserPath, setChooserPath] = useState(pathname);
   const [progress] = useState(() => new Animated.Value(0));
@@ -65,7 +67,7 @@ export function FloatingNavigation() {
     </Pressable>;
   };
   return <>
-    <AssistantLauncher hidden={open} />
+    <AssistantLauncher hidden={open || postPanelVisible} />
     {open && <Animated.View style={[styles.chooser, { opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [70, 0] }) }] }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.chooserContent, { paddingTop: Math.max(insets.top + 8, 20), paddingBottom: islandHeight + 30 }]}>
         <View style={styles.header}><Pressable accessibilityRole="button" accessibilityLabel="Закрыть создание" onPress={close} style={styles.back}><Ionicons name="arrow-back" color={palette.forest} size={25} /></Pressable><Text style={styles.title}>Создать</Text><View style={styles.back} /></View>

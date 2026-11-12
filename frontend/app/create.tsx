@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Linking, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -10,7 +11,7 @@ import { SocialMedia } from '@/components/social-media';
 import type { Post } from '@/constants/content';
 import { palette, useAppStyles } from '@/lib/app-appearance';
 import { getCompanyPlaces } from '@/lib/company-places';
-import { checkVideoAsset, uploadMedia, type UploadedMedia } from '@/lib/media';
+import { checkMediaAsset, checkVideoAsset, uploadMedia, type UploadedMedia } from '@/lib/media';
 import { publishSocial, socialRequestId, type NewSocialItem } from '@/lib/social';
 import { getUserSession, type UserSession } from '@/lib/user-session';
 
@@ -32,7 +33,7 @@ function Composer({ kind }: { kind: Kind }) {
   const [session, setSession] = useState<UserSession | null>(null);
   const [text, setText] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  const [video, setVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [mediaAsset, setMediaAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [uploaded, setUploaded] = useState<UploadedMedia | null>(null);
   const [places, setPlaces] = useState<Post[]>([]);
   const [placeId, setPlaceId] = useState<string | null>(null);
@@ -82,12 +83,12 @@ function Composer({ kind }: { kind: Kind }) {
 
   const saveDraft = async () => {
     if (!session || pending || busy) return;
-    try { await AsyncStorage.setItem(draftKey(session.id), text); setMessage(video ? 'Текстовый черновик сохранён на этом устройстве. Видео нужно будет выбрать повторно.' : 'Текстовый черновик сохранён на этом устройстве.'); }
+    try { await AsyncStorage.setItem(draftKey(session.id), text); setMessage(mediaAsset ? 'Текстовый черновик сохранён на этом устройстве. Фото или видео нужно будет выбрать повторно.' : 'Текстовый черновик сохранён на этом устройстве.'); }
     catch { setError('Не удалось сохранить черновик.'); }
   };
   const acceptVideo = (asset: ImagePicker.ImagePickerAsset) => {
     checkVideoAsset(asset, kind === 'story' ? 60 : undefined);
-    setVideo(asset); setUploaded(null); setImageUrl(''); setMessage('Видео готово к отправке.');
+    setMediaAsset(asset); setUploaded(null); setImageUrl(''); setMessage('Видео готово к отправке.');
   };
   const chooseVideo = async () => {
     if (busy || pending || storiesUnavailable) return;
@@ -101,6 +102,38 @@ function Composer({ kind }: { kind: Kind }) {
       if (result.canceled) { setMessage('Выбор видео отменён.'); return; }
       acceptVideo(result.assets[0]);
     } catch (cause) { setError(messageFrom(cause, 'Не удалось выбрать видео. Попробуйте ещё раз.')); }
+    finally { setPicking(false); }
+  };
+  const acceptPhoto = async (asset: ImagePicker.ImagePickerAsset) => {
+    // Convert camera formats such as HEIC to a JPEG understood by the API.
+    const context = ImageManipulator.manipulate(asset.uri, { maxWidth: 1920, maxHeight: 1920 });
+    try {
+      const rendered = await context.renderAsync();
+      try {
+        const photo = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.82 });
+        const result: ImagePicker.ImagePickerAsset = { uri: photo.uri, width: photo.width, height: photo.height, type: 'image', mimeType: 'image/jpeg', fileName: 'photo.jpg' };
+        checkMediaAsset(result);
+        setMediaAsset(result); setUploaded(null); setImageUrl(''); setMessage('Фото готово к отправке.');
+      } finally { rendered.release(); }
+    } finally { context.release(); }
+  };
+  const selectPhoto = async (camera: boolean) => {
+    if (busy || pending || storiesUnavailable || (camera && Platform.OS === 'web')) return;
+    setPicking(true); setError(''); setMessage(''); setPermissionDenied(false);
+    try {
+      if (camera) {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) { setPermissionDenied(true); throw new Error('Разрешите доступ к камере, чтобы сделать фото.'); }
+      } else if (Platform.OS === 'ios') {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) { setPermissionDenied(true); throw new Error('Разрешите доступ к медиатеке, чтобы выбрать фото.'); }
+      }
+      const result = camera
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
+      if (result.canceled) { setMessage('Выбор фото отменён.'); return; }
+      await acceptPhoto(result.assets[0]);
+    } catch (cause) { setError(messageFrom(cause, 'Не удалось подготовить фото. Попробуйте ещё раз.')); }
     finally { setPicking(false); }
   };
   const recordVideo = async () => {
@@ -121,15 +154,15 @@ function Composer({ kind }: { kind: Kind }) {
   };
   const publish = async () => {
     if (!session || busy || storiesUnavailable) return;
-    if (!pending && !text.trim() && !imageUrl.trim() && !video) { setError('Добавьте текст, видео или ссылку на изображение.'); return; }
+    if (!pending && !text.trim() && !imageUrl.trim() && !mediaAsset) { setError('Добавьте текст, фото, видео или ссылку на изображение.'); return; }
     if (!pending && imageUrl.trim() && !/^https?:\/\//i.test(imageUrl.trim())) { setError('Ссылка на изображение должна начинаться с http:// или https://.'); return; }
     if (session.role === 'company' && !placeId) { setError('Сначала добавьте заведение в профиле.'); return; }
     setSaving(true); setError(''); setMessage('');
     try {
       let media = uploaded;
-      if (!pending && video && !media) {
+      if (!pending && mediaAsset && !media) {
         setUploading(true);
-        try { media = await uploadMedia(video); setUploaded(media); }
+        try { media = await uploadMedia(mediaAsset); setUploaded(media); }
         finally { setUploading(false); }
       }
       const payload: NewSocialItem = pending ?? { kind, body: text.trim(), imageUrl: imageUrl.trim() || null, mediaId: media?.id ?? null, placeId: session.role === 'company' ? placeId : null, requestId: socialRequestId() };
@@ -137,12 +170,12 @@ function Composer({ kind }: { kind: Kind }) {
       setPending(payload);
       await publishSocial(payload);
       await AsyncStorage.multiRemove([pendingKey(session.id), draftKey(session.id)]);
-      setPending(null); setText(''); setImageUrl(''); setVideo(null); setUploaded(null);
+      setPending(null); setText(''); setImageUrl(''); setMediaAsset(null); setUploaded(null);
       setMessage(kind === 'story' ? 'История опубликована на 24 часа.' : 'Публикация добавлена в ленту.');
     } catch (cause) { setError(messageFrom(cause, 'Не удалось подтвердить публикацию. Повторите отправку — дубликата не будет.')); }
     finally { setSaving(false); }
   };
-  const preview = video?.uri || uploaded?.url;
+  const preview = mediaAsset?.uri || uploaded?.url;
 
   return <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <Stack.Screen options={{ title: kind === 'post' ? 'Новая публикация' : 'Новая история', headerStyle: { backgroundColor: palette.cream }, headerTintColor: palette.forest }} />
@@ -164,21 +197,23 @@ function Composer({ kind }: { kind: Kind }) {
         <TextInput accessibilityLabel="Текст" editable={!pending && !busy} multiline maxLength={kind === 'story' ? 280 : 2000} placeholder="Напишите здесь..." placeholderTextColor={palette.muted} value={text} onChangeText={value => { setText(value); setMessage(''); }} style={styles.input} />
         <Text style={styles.counter}>{text.length} / {kind === 'story' ? 280 : 2000}</Text>
         {!pending && <View style={styles.mediaActions}>
+          {Platform.OS !== 'web' && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void selectPhoto(true)} style={[styles.mediaButton, busy && styles.disabled]}><Ionicons name="camera-outline" color={palette.forest} size={23} /><Text style={styles.mediaButtonText}>Сделать фото</Text></Pressable>}
+          {kind === 'post' && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void selectPhoto(false)} style={[styles.mediaButton, busy && styles.disabled]}><Ionicons name="image-outline" color={palette.forest} size={23} /><Text style={styles.mediaButtonText}>Выбрать фото</Text></Pressable>}
           {Platform.OS !== 'web' && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void recordVideo()} style={[styles.mediaButton, busy && styles.disabled]}><Ionicons name="videocam-outline" color={palette.forest} size={23} /><Text style={styles.mediaButtonText}>Записать видео</Text></Pressable>}
           {kind === 'post' && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void chooseVideo()} style={[styles.mediaButton, busy && styles.disabled]}><Ionicons name="attach-outline" color={palette.forest} size={23} /><Text style={styles.mediaButtonText}>Прикрепить видео</Text></Pressable>}
         </View>}
         {picking && <ActivityIndicator color={palette.olive} />}
         <Text style={styles.mediaHint}>{kind === 'story' ? 'Запись до 60 секунд, файл до 25 МБ.' : 'MP4, MOV или WebM до 25 МБ. Запись с камеры доступна в приложении на телефоне.'}</Text>
         {!!preview && <View style={styles.preview}>
-          <SocialMedia uri={preview} kind="video" />
-          {!pending && <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setVideo(null); setUploaded(null); }} style={styles.secondary}><Text style={styles.secondaryText}>Убрать видео</Text></Pressable>}
+          <SocialMedia uri={preview} kind={uploaded?.kind || (mediaAsset?.type === 'image' ? 'image' : 'video')} />
+          {!pending && <Pressable accessibilityRole="button" disabled={busy} onPress={() => { setMediaAsset(null); setUploaded(null); }} style={styles.secondary}><Text style={styles.secondaryText}>Убрать медиа</Text></Pressable>}
         </View>}
-        {!video && !uploaded && <TextInput accessibilityLabel="Ссылка на изображение" editable={!pending && !busy} autoCapitalize="none" keyboardType="url" placeholder="Ссылка на изображение (необязательно)" placeholderTextColor={palette.muted} value={imageUrl} onChangeText={setImageUrl} style={styles.url} />}
+        {!mediaAsset && !uploaded && <TextInput accessibilityLabel="Ссылка на изображение" editable={!pending && !busy} autoCapitalize="none" keyboardType="url" placeholder="Ссылка на изображение (необязательно)" placeholderTextColor={palette.muted} value={imageUrl} onChangeText={setImageUrl} style={styles.url} />}
         {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
         {permissionDenied && Platform.OS !== 'web' && <Pressable accessibilityRole="button" onPress={() => void Linking.openSettings()} style={styles.secondary}><Text style={styles.secondaryText}>Открыть настройки устройства</Text></Pressable>}
         {!!message && <Text accessibilityRole="alert" style={styles.success}>{message}</Text>}
-        {uploading && <View style={styles.uploadStatus}><ActivityIndicator color={palette.olive} /><Text style={styles.description}>Загружаем видео на сервер…</Text></View>}
-        <Pressable accessibilityRole="button" disabled={busy} onPress={() => void publish()} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{uploading ? 'Загружаем видео...' : saving ? 'Отправляем...' : pending ? 'Повторить отправку' : 'Опубликовать'}</Text></Pressable>
+        {uploading && <View style={styles.uploadStatus}><ActivityIndicator color={palette.olive} /><Text style={styles.description}>Загружаем файл на сервер…</Text></View>}
+        <Pressable accessibilityRole="button" disabled={busy} onPress={() => void publish()} style={[styles.button, busy && styles.disabled]}><Text style={styles.buttonText}>{uploading ? 'Загружаем файл...' : saving ? 'Отправляем...' : pending ? 'Повторить отправку' : 'Опубликовать'}</Text></Pressable>
         {!pending && <Pressable accessibilityRole="button" disabled={busy} onPress={() => void saveDraft()} style={styles.secondary}><Text style={styles.secondaryText}>Сохранить текстовый черновик</Text></Pressable>}
       </View>}
     </ScrollView>

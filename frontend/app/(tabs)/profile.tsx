@@ -257,7 +257,7 @@ export default function ProfileScreen() {
         <View style={styles.headerCard}>
           <View style={styles.profileIdentityRow}>
             <View>
-              {session.avatar ? <Image source={{ uri: session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Ionicons name="person" size={51} color="#606C38" /></View>}
+              {session.avatar ? <Image source={{ uri: session.avatar }} style={styles.avatar} /> : <View style={styles.avatarPlaceholder}><Image source={require('@/assets/images/mascot-sketch.png')} style={styles.avatar} resizeMode="contain" /></View>}
               {session.role === 'user' && (
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel="Настройки фото профиля"
                   onPress={() => router.push('/settings')} style={styles.avatarCamera}>

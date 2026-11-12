@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_URL } from '@/lib/statistics';
 import type { MapCanvasProps } from './MapCanvas.types';
 
-export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPlace, onRouteCameraMove, onReady }: MapCanvasProps) {
+export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPlace, onRouteToFriend, onRouteCameraMove, onReady }: MapCanvasProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [readyVersion, setReadyVersion] = useState(0);
   const origin = new URL(API_URL).origin;
@@ -19,10 +19,11 @@ export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPl
       if (event.data.type === 'error') onError(String(event.data.message));
       if (event.data.type === 'submit' && typeof event.data.id === 'string') onSubmit?.(event.data.id);
       if (event.data.type === 'open-place' && typeof event.data.id === 'string') onOpenPlace?.(event.data.id);
+      if (event.data.type === 'route-to-friend' && typeof event.data.id === 'string') onRouteToFriend?.(event.data.id);
       if (event.data.type === 'route-camera-move' && Number.isSafeInteger(event.data.runId)) onRouteCameraMove?.(event.data.runId);
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [origin, onSelect, onError, onSubmit, onOpenPlace, onRouteCameraMove, onReady]);
+  }, [origin, onSelect, onError, onSubmit, onOpenPlace, onRouteToFriend, onRouteCameraMove, onReady]);
   return <iframe ref={frame} title="Карта мест" src={`${API_URL}/map-assets/`} style={{ border: 0, width: '100%', height: '100%', flex: 1 }} />;
 }

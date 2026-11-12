@@ -51,13 +51,21 @@
     return /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : null;
   }
 
-  function addImage(container, src, className, onLoad) {
+  function addImage(container, src, className, onLoad, fallback) {
     const image = document.createElement('img');
     image.className = className;
     image.alt = '';
     image.decoding = 'async';
     image.referrerPolicy = 'no-referrer';
-    image.addEventListener('error', () => image.remove(), { once: true });
+    let fallbackUsed = src === fallback;
+    if (fallbackUsed) image.classList.add('pin-avatar-default');
+    image.addEventListener('error', () => {
+      if (fallback && !fallbackUsed) {
+        fallbackUsed = true;
+        image.classList.add('pin-avatar-default');
+        image.src = fallback;
+      } else image.remove();
+    });
     if (onLoad) image.addEventListener('load', onLoad, { once: true });
     container.prepend(image);
     image.src = src;
@@ -93,6 +101,7 @@
     body.append(name);
     if (person) {
       caption(body, 'Примерная геопозиция друга');
+      action(body, 'Маршрут к другу', { type: 'route-to-friend', id: point.id }, notify);
     } else {
       const category = categoryNames.get(point.category);
       if (nearby) caption(body, 'Заведение из подписок рядом');
@@ -141,8 +150,9 @@
       face.append(icon(variant));
       element.append(face);
       const showImage = () => face.classList.add('photo-ready');
-      const avatar = person ? friendAvatarUrl(point.avatar) : null;
-      if (avatar) addImage(face, avatar, 'pin-avatar', showImage);
+      const defaultAvatar = '/map-assets/default-avatar.png';
+      const avatar = person ? friendAvatarUrl(point.avatar) || defaultAvatar : null;
+      if (avatar) addImage(face, avatar, 'pin-avatar', showImage, defaultAvatar);
       const marker = new maplibregl.Marker({ element }).setLngLat(position);
       const popup = interactive ? placePopup(point, person, nearby, image, notify) : null;
       if (popup) {
@@ -168,7 +178,7 @@
       for (const point of state.people || []) draw('person:' + point.id, point, 'person');
       draw('chosen', state.selected && { ...state.selected, name: 'Выбранная точка' }, 'chosen');
       draw('route-start', state.routeStart && { ...state.routeStart, name: 'Начало маршрута' }, 'route-start');
-      if (destination && !active.has('place:' + destination.pointId)) {
+      if (destination && !active.has('place:' + destination.pointId) && !active.has('person:' + destination.friendId)) {
         draw('route-destination', { ...destination, name: destination.title }, 'route-destination');
       }
       for (const [key, entry] of entries) {

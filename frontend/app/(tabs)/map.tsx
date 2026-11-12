@@ -113,6 +113,17 @@ export default function MapScreen() {
     const postId = places.find(point => point.id === id)?.postId;
     if (mapFocused.current && postId) router.push({ pathname: '/company/[id]', params: { id: postId } });
   }, [places, router]);
+  const routeToFriend = useCallback((id: string) => {
+    if (!mapFocused.current) return;
+    const friend = people.find(item => item.id === id && item.expiresAt > Date.now());
+    if (!friend) { setNotice('Геопозиция друга сейчас недоступна'); return; }
+    setAdding(false);
+    setSelected(null);
+    setError('');
+    setNotice('Маршрут ведёт к последней доступной примерной геопозиции друга.');
+    showDestination({ id: `friend-${friend.id}`, friendId: friend.id, title: friend.name,
+      subtitle: 'Примерная геопозиция друга', latitude: friend.latitude, longitude: friend.longitude }, true);
+  }, [people, showDestination]);
   const load = useCallback(async (activeSession: UserSession | null) => {
     if (!mapFocused.current) return;
     const version = ++loadVersion.current;
@@ -168,6 +179,17 @@ export default function MapScreen() {
     }, Math.max(0, deadline - Date.now()));
     return () => clearTimeout(timer);
   }, [focused, people]);
+
+  useEffect(() => {
+    if (!focused || !loaded || !destination?.friendId) return;
+    if (!people.some(friend => friend.id === destination.friendId && friend.expiresAt > Date.now())) {
+      const timer = setTimeout(() => {
+        closeDestination();
+        setNotice('Геопозиция друга больше недоступна. Маршрут закрыт.');
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [focused, loaded, destination?.friendId, people, closeDestination]);
 
   const submitPoint = useCallback(async (id: string) => {
     try {
@@ -296,12 +318,20 @@ export default function MapScreen() {
 
   const buildRoute = async () => {
     if (!plan?.origin || !destination || plan.pickingOrigin || routeStatus !== 'idle') return;
+    const friend = destination.friendId ? people.find(item => item.id === destination.friendId && item.expiresAt > Date.now()) : null;
+    if (destination.friendId && !friend) {
+      closeDestination();
+      setNotice('Геопозиция друга больше недоступна. Маршрут закрыт.');
+      return;
+    }
+    const target = friend ? { ...destination, latitude: friend.latitude, longitude: friend.longitude } : destination;
+    if (friend) setDestination(target);
     resetRoute();
     const request = new AbortController();
     routeRequest.current = request;
     setRouteStatus('routing');
     try {
-      const result = await findRoute(plan.origin, destination, plan.mode, request.signal);
+      const result = await findRoute(plan.origin, target, plan.mode, request.signal);
       if (!request.signal.aborted) setRoute({ ...result, sequence: Date.now() + Math.random() });
     } catch (cause) {
       if (!request.signal.aborted) {
@@ -324,7 +354,7 @@ export default function MapScreen() {
   return <View {...webData({ hakrosFocus: 'map' })} style={styles.root}>
     <View style={styles.map}>
       <MapCanvas state={mapState}
-        onSelect={select} onError={canvasError} onSubmit={submitPoint} onOpenPlace={openPlace}
+        onSelect={select} onError={canvasError} onSubmit={submitPoint} onOpenPlace={openPlace} onRouteToFriend={routeToFriend}
         onReady={onMapReady} onRouteCameraMove={releaseCamera} />
     </View>
     <View {...webData({ mapOverlay: 'true' })} pointerEvents="box-none" style={[styles.overlay, {

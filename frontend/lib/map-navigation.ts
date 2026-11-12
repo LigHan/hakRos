@@ -3,7 +3,7 @@ import * as Location from 'expo-location';
 import type { MapCoordinates, MapPoint } from '@/components/MapCanvas.types';
 import { api } from '@/lib/statistics';
 
-export type MapSearchResult = MapCoordinates & { id: string; title: string; subtitle: string; address?: string | null; pointId?: string };
+export type MapSearchResult = MapCoordinates & { id: string; title: string; subtitle: string; address?: string | null; pointId?: string; friendId?: string };
 export type AddressSuggestion = MapSearchResult & { address: string };
 export type TravelMode = 'walk' | 'drive';
 export type MapRoute = { coordinates: [number, number][]; distance: number; duration: number };

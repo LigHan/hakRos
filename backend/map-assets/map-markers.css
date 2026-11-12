@@ -38,6 +38,7 @@
 .pin-open.nearby-subscription .photo-ready { width: 52px; height: 52px; border-radius: 14px; }
 .pin-avatar, .pin-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .pin-avatar, .pin-photo { visibility: hidden; }
+.pin-avatar-default { object-fit: contain; transform: scale(1.4); }
 .photo-ready .pin-avatar, .pin-open .photo-ready .pin-photo { visibility: visible; }
 .maplibregl-popup { z-index: 5; }
 .maplibregl-popup-content {

@@ -47,7 +47,7 @@ function PublicProfile({ id }: { id: string }) {
     {!!error && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
     {profile && <>
       <View style={styles.identity}>
-        {profile.avatar ? <Image source={{ uri: profile.avatar }} style={styles.avatar} /> : <View style={styles.placeholder}><Ionicons name="person-outline" size={42} color={palette.olive} /></View>}
+        {profile.avatar ? <Image source={{ uri: profile.avatar }} style={styles.avatar} /> : <View style={styles.placeholder}><Image source={require('@/assets/images/mascot-sketch.png')} style={styles.avatar} resizeMode="contain" /></View>}
         <View style={styles.identityCopy}><Text style={styles.name}>{[profile.name, profile.surname].filter(Boolean).join(' ')}</Text><Text style={styles.status}>{profile.isPrivate ? 'Приватный профиль' : 'Открытый профиль'}</Text></View>
       </View>
       {!!profile.bio && <Text style={styles.bio}>{profile.bio}</Text>}

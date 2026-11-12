@@ -3,7 +3,7 @@ import { WebView, type WebViewMessageEvent, type WebViewProps } from 'react-nati
 import { API_URL } from '@/lib/statistics';
 import type { MapCanvasProps } from './MapCanvas.types';
 
-export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPlace, onRouteCameraMove, onReady }: MapCanvasProps) {
+export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPlace, onRouteToFriend, onRouteCameraMove, onReady }: MapCanvasProps) {
   const frame = useRef<WebView<WebViewProps>>(null);
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -20,6 +20,7 @@ export default function MapCanvas({ state, onSelect, onError, onSubmit, onOpenPl
       if (data.type === 'error') onError(String(data.message));
       if (data.type === 'submit' && typeof data.id === 'string') onSubmit?.(data.id);
       if (data.type === 'open-place' && typeof data.id === 'string') onOpenPlace?.(data.id);
+      if (data.type === 'route-to-friend' && typeof data.id === 'string') onRouteToFriend?.(data.id);
       if (data.type === 'route-camera-move' && Number.isSafeInteger(data.runId)) onRouteCameraMove?.(data.runId);
     } catch { onError('Некорректный ответ карты'); }
   };

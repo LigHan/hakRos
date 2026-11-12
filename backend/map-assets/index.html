@@ -198,6 +198,8 @@
         '<a href="https://www.openstreetmap.org/fixthemap" target="_blank" rel="noopener">Исправить карту</a>',
       ]},
     });
+    // The iframe can grow after MapLibre starts, without a window resize event.
+    if (window.ResizeObserver) new ResizeObserver(() => map.resize()).observe(map.getContainer());
     map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'top-right');
     map.on('load', async () => {
       try { await applyRussianRegionalView(); status.style.display = 'none'; }

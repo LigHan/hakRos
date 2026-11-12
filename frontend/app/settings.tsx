@@ -109,7 +109,7 @@ export default function SettingsScreen() {
         <Text style={styles.accountHeading}>Профиль</Text>
         {profileLoading ? <ActivityIndicator color={palette.olive} /> : !profileLoaded ? <Pressable accessibilityRole="button" onPress={() => { setError(''); setProfileLoading(true); setProfileLoaded(false); setProfileAttempt(value => value + 1); }} style={styles.smallButton}><Text style={styles.smallButtonText}>Загрузить профиль ещё раз</Text></Pressable> : <>
           <View style={styles.avatarRow}>
-            {avatar ? <Image source={{ uri: avatar }} style={styles.avatar} /> : <View style={styles.avatarEmpty}><Ionicons name="person-outline" size={32} color={palette.olive} /></View>}
+            {avatar ? <Image source={{ uri: avatar }} style={styles.avatar} /> : <View style={styles.avatarEmpty}><Image source={require('@/assets/images/mascot-sketch.png')} style={styles.avatar} resizeMode="contain" /></View>}
             <View style={styles.avatarActions}>
               <Pressable accessibilityRole="button" disabled={profileSaving} onPress={() => void chooseAvatar()} style={styles.smallButton}><Text style={styles.smallButtonText}>Изменить аватарку</Text></Pressable>
               {!!avatar && <Pressable accessibilityRole="button" disabled={profileSaving} onPress={() => { setAvatar(''); setAvatarBase64(undefined); setRemoveAvatar(true); setNotice(''); }}><Text style={styles.removeText}>Убрать фото</Text></Pressable>}

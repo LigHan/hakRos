@@ -30,7 +30,7 @@ export type MapState = {
   people: MapPoint[];
   selected: MapCoordinates | null;
   center: (MapCoordinates & { sequence: number }) | null;
-  destination: (MapCoordinates & { title: string; pointId?: string }) | null;
+  destination: (MapCoordinates & { title: string; pointId?: string; friendId?: string }) | null;
   routeStart: MapCoordinates | null;
   route: { coordinates: [number, number][]; sequence: number } | null;
   routePlayback?: RoutePlayback | null;
@@ -42,6 +42,7 @@ export type MapCanvasProps = {
   onError: (message: string) => void;
   onSubmit?: (id: string) => void;
   onOpenPlace?: (id: string) => void;
+  onRouteToFriend?: (id: string) => void;
   onRouteCameraMove?: (runId: number) => void;
   onReady?: () => void;
 };
